@@ -22,7 +22,7 @@ idf_component_register(
         esp_lcd_touch
         nvs_flash
         esp_timer
-        esp_vfs_fat
+        fatfs
         sdmmc
         esp_driver_gpio
         esp_driver_i2c

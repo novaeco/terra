@@ -14,6 +14,19 @@ idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
+### Dépannage rapide (Windows / argtable3)
+
+Si `idf.py set-target` ou `idf.py build` échoue avec `file COPY cannot find ... argtable3.h`,
+vérifiez votre environnement ESP-IDF puis relancez la configuration :
+
+```powershell
+python tools/validate_idf_env.py
+idf.py fullclean
+idf.py set-target esp32s3
+```
+
+Les étapes détaillées sont décrites dans `docs/BUILD_TROUBLESHOOTING.md`.
+
 ## Notes d’intégration
 - Backlight piloté par LEDC (PWM 20 kHz) sur `BACKLIGHT_GPIO` (configurable dans `app_hw.c`).
 - Driver RGB générique (buffers double en PSRAM) via `esp_lcd_new_rgb_panel`; ajuster timings/assignations GPIO selon la carte Waveshare.

@@ -33,58 +33,37 @@ lv_obj_t *ui_lblStatusSd = NULL;
 lv_obj_t *ui_lblStatusClock = NULL;
 lv_obj_t *ui_lblStatusBacklight = NULL;
 lv_obj_t *ui_lblStatusAlert = NULL;
+lv_obj_t *ui_lblTouchCoords = NULL;
+lv_obj_t *ui_barSdUsage = NULL;
+lv_obj_t *ui_lblSdStatus = NULL;
+lv_obj_t *ui_listFrames = NULL;
+lv_obj_t *ui_listLogs = NULL;
+lv_obj_t *ui_sliderBacklight = NULL;
 
 static lv_obj_t *ui_tabviewHome = NULL;
-static lv_obj_t *ui_chartCpu = NULL;
-static lv_obj_t *ui_listFrames = NULL;
-static lv_obj_t *ui_listFiles = NULL;
-static lv_obj_t *ui_listLogs = NULL;
-static lv_obj_t *ui_lblTouchCoords = NULL;
-static lv_obj_t *ui_taPin = NULL;
-static lv_obj_t *ui_lblSdStatus = NULL;
-static lv_obj_t *ui_barSdUsage = NULL;
-static lv_obj_t *ui_sliderBacklight = NULL;
-static lv_obj_t *ui_ddCanBaud = NULL;
-static lv_obj_t *ui_ddRs485Baud = NULL;
-static lv_obj_t *ui_swBle = NULL;
-static lv_obj_t *ui_labelLang = NULL;
+static lv_obj_t *ui_tabDiag = NULL;
 
-static app_ui_state_t s_ui_state = {0};
-
-// Traductions minimales FR/EN
-static const char *lang_table[][8] = {
-    {"Accueil", "Réseau", "Système", "Climat", "Profils", "Comm", "Stockage", "Diag"},
-    {"Home", "Network", "System", "Climate", "Profiles", "Comm", "Storage", "Diag"}
+static app_ui_state_t s_ui_state = {
+    .wifi = {.connected = false, .rssi = -120, .ip = "0.0.0.0"},
+    .sd_mounted = false,
+    .light = {.backlight_level = 50, .night_mode = false},
+    .alert_active = false,
+    .clock = "--:--"
 };
 
-// Clavier AZERTY étendu (minuscules)
+// Clavier AZERTY minimal
 static const char *kb_map_azerty[] = {
     "1","2","3","4","5","6","7","8","9","0","'","^","\n",
     "a","z","e","r","t","y","u","i","o","p","è","$","\n",
     "q","s","d","f","g","h","j","k","l","m","à","ç","\n",
     "w","x","c","v","b","n",",",";","?",".",LV_SYMBOL_BACKSPACE,"\n",
     LV_SYMBOL_CLOSE," ",LV_SYMBOL_OK,""
-#include "lvgl.h"
-#include "esp_log.h"
-
-static const char *TAG = "ui_init";
-
-lv_obj_t *ui_ScreenMain = NULL;
-lv_obj_t *ui_kbAzerty = NULL;
-lv_obj_t *ui_taSsid = NULL;
-lv_obj_t *ui_taPwd = NULL;
-
-static const char *kb_map_azerty[] = {
-    "a","z","e","r","t","y","u","i","o","p","\n",
-    "q","s","d","f","g","h","j","k","l","m","\n",
-    "w","x","c","v","b","n",LV_SYMBOL_BACKSPACE,"\n",
-    LV_SYMBOL_CLOSE, " ", LV_SYMBOL_OK, ""
 };
 
 static const lv_btnmatrix_ctrl_t kb_ctrl_azerty[] = {
     LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
     LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
-    LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NEW_LINE,
+    LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
     LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
     LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
     LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
@@ -97,11 +76,9 @@ static const lv_btnmatrix_ctrl_t kb_ctrl_azerty[] = {
 };
 
 static void create_shared_styles(void) {
-    // Palette et styles mutualisés minimalistes pour limiter l'empreinte RAM
+    // Palette et styles mutualisés pour limiter l'empreinte RAM
     static lv_style_t style_btn_primary;
-    static lv_style_t style_btn_secondary;
     static lv_style_t style_panel_card;
-    static lv_style_t style_label_value;
 
     lv_style_init(&style_btn_primary);
     lv_style_set_radius(&style_btn_primary, 8);
@@ -109,31 +86,14 @@ static void create_shared_styles(void) {
     lv_style_set_text_color(&style_btn_primary, lv_color_white());
     lv_style_set_pad_all(&style_btn_primary, 12);
 
-    lv_style_init(&style_btn_secondary);
-    lv_style_set_radius(&style_btn_secondary, 8);
-    lv_style_set_bg_color(&style_btn_secondary, lv_color_hex(0x162235));
-    lv_style_set_border_color(&style_btn_secondary, lv_palette_main(LV_PALETTE_LIGHT_BLUE));
-    lv_style_set_border_width(&style_btn_secondary, 1);
-    lv_style_set_text_color(&style_btn_secondary, lv_color_hex(0xE0E6F0));
-    lv_style_set_pad_all(&style_btn_secondary, 12);
-
     lv_style_init(&style_panel_card);
     lv_style_set_radius(&style_panel_card, 12);
-    lv_style_set_bg_color(&style_panel_card, lv_color_hex(0x1E2F45));
-    lv_style_set_pad_all(&style_panel_card, 12);
-    lv_style_set_shadow_width(&style_panel_card, 8);
-    lv_style_set_shadow_color(&style_panel_card, lv_color_hex(0x0B1526));
+    lv_style_set_bg_color(&style_panel_card, lv_color_hex(0x162235));
+    lv_style_set_pad_all(&style_panel_card, 10);
 
-    lv_style_init(&style_label_value);
-    lv_style_set_text_color(&style_label_value, lv_color_hex(0xE0E6F0));
-    lv_style_set_text_font(&style_label_value, &lv_font_montserrat_20);
-
-    // Appliquer un thème global simple pour rappel SquareLine (couleurs sombres)
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x0B1526), 0);
     LV_UNUSED(style_btn_primary);
-    LV_UNUSED(style_btn_secondary);
     LV_UNUSED(style_panel_card);
-    LV_UNUSED(style_label_value);
 }
 
 static lv_obj_t *create_status_chip(lv_obj_t *parent, const char *icon, lv_obj_t **label_out) {
@@ -275,6 +235,15 @@ static void create_home_screen(void) {
     lv_obj_add_event_cb(ui_tabviewHome, ui_event_tab_swipe, LV_EVENT_GESTURE, NULL);
 }
 
+static void create_keyboard(void) {
+    ui_kbAzerty = lv_keyboard_create(lv_layer_top());
+    lv_obj_add_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
+    lv_keyboard_set_mode(ui_kbAzerty, LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_keyboard_set_map(ui_kbAzerty, LV_KEYBOARD_MODE_TEXT_LOWER, kb_map_azerty, kb_ctrl_azerty);
+    lv_obj_add_event_cb(ui_kbAzerty, ui_event_kb_ready, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(ui_kbAzerty, ui_event_kb_cancel, LV_EVENT_CANCEL, NULL);
+}
+
 static void create_network_screen(void) {
     ui_NetworkScreen = lv_obj_create(NULL);
     lv_obj_t *col = lv_obj_create(ui_NetworkScreen);
@@ -294,35 +263,6 @@ static void create_network_screen(void) {
     lv_obj_add_event_cb(btnConnect, ui_event_btnConnect, LV_EVENT_CLICKED, NULL);
     lv_obj_t *btnDisconnect = create_menu_button(row, "Déconnecter");
     lv_obj_add_event_cb(btnDisconnect, ui_event_btnDisconnect, LV_EVENT_CLICKED, NULL);
-    LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NEW_LINE,
-    LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
-    LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
-    LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NEW_LINE,
-    LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT,
-    LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_CHECKABLE, LV_BTNMATRIX_CTRL_NEW_LINE,
-    LV_BTNMATRIX_CTRL_CHECKABLE, LV_BTNMATRIX_CTRL_NO_REPEAT, LV_BTNMATRIX_CTRL_CHECKABLE, LV_BTNMATRIX_CTRL_CHECKABLE
-};
-
-static void create_keyboard(lv_obj_t *parent) {
-    ui_kbAzerty = lv_keyboard_create(parent);
-    lv_obj_add_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
-    lv_keyboard_set_mode(ui_kbAzerty, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_keyboard_set_map(ui_kbAzerty, LV_KEYBOARD_MODE_TEXT_LOWER, kb_map_azerty, kb_ctrl_azerty);
-    lv_obj_add_event_cb(ui_kbAzerty, ui_event_kbReady, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(ui_kbAzerty, ui_event_kbCancel, LV_EVENT_CANCEL, NULL);
-}
-
-static void create_main_screen(void) {
-    ui_ScreenMain = lv_obj_create(NULL);
-    lv_obj_clear_flag(ui_ScreenMain, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *col = lv_obj_create(ui_ScreenMain);
-    lv_obj_set_size(col, lv_pct(100), lv_pct(100));
-    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_all(col, 12, 0);
-
-    lv_obj_t *lbl = lv_label_create(col);
-    lv_label_set_text(lbl, "UI Terrariophile - placeholders SquareLine");
 
     ui_taSsid = lv_textarea_create(col);
     lv_textarea_set_placeholder_text(ui_taSsid, "SSID");
@@ -332,10 +272,6 @@ static void create_main_screen(void) {
     lv_textarea_set_placeholder_text(ui_taPwd, "Mot de passe");
     lv_textarea_set_password_mode(ui_taPwd, true);
     lv_obj_add_event_cb(ui_taPwd, ui_event_taPwd, LV_EVENT_FOCUSED, NULL);
-
-    ui_swBle = lv_switch_create(col);
-    lv_obj_t *lblBle = lv_label_create(col);
-    lv_label_set_text(lblBle, "Bluetooth placeholder");
 }
 
 static void create_system_screen(void) {
@@ -349,6 +285,7 @@ static void create_system_screen(void) {
     ui_sliderBacklight = lv_slider_create(col);
     lv_slider_set_range(ui_sliderBacklight, 0, 100);
     lv_obj_set_width(ui_sliderBacklight, lv_pct(90));
+    lv_slider_set_value(ui_sliderBacklight, s_ui_state.light.backlight_level, LV_ANIM_OFF);
     lv_obj_add_event_cb(ui_sliderBacklight, ui_event_sliderBacklight, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t *row_presets = lv_obj_create(col);
@@ -361,9 +298,6 @@ static void create_system_screen(void) {
     lv_obj_add_event_cb(btnNight, ui_event_btnPresetNight, LV_EVENT_CLICKED, NULL);
     lv_obj_t *btnIndoor = create_menu_button(row_presets, "Intérieur");
     lv_obj_add_event_cb(btnIndoor, ui_event_btnPresetIndoor, LV_EVENT_CLICKED, NULL);
-
-    ui_labelLang = lv_label_create(col);
-    lv_label_set_text(ui_labelLang, "Langue: FR");
 }
 
 static void create_climate_screen(void) {
@@ -406,15 +340,15 @@ static void create_comm_screen(void) {
     lv_obj_set_style_pad_gap(col, 6, 0);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
 
-    ui_ddCanBaud = lv_dropdown_create(col);
-    lv_dropdown_set_options_static(ui_ddCanBaud, "250k\n500k\n1M");
-    lv_obj_add_event_cb(ui_ddCanBaud, ui_event_ddCanBaud, LV_EVENT_VALUE_CHANGED, NULL);
-    ui_ddRs485Baud = lv_dropdown_create(col);
-    lv_dropdown_set_options_static(ui_ddRs485Baud, "9600\n19200\n38400\n115200");
-    lv_obj_add_event_cb(ui_ddRs485Baud, ui_event_ddRs485Baud, LV_EVENT_VALUE_CHANGED, NULL);
-
+    lv_obj_t *dd_can = lv_dropdown_create(col);
     ui_listFrames = lv_list_create(col);
     lv_obj_set_height(ui_listFrames, 150);
+    lv_dropdown_set_options_static(dd_can, "250k\n500k\n1M");
+    lv_obj_add_event_cb(dd_can, ui_event_ddCanBaud, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_t *dd_rs485 = lv_dropdown_create(col);
+    lv_dropdown_set_options_static(dd_rs485, "9600\n19200\n38400\n115200");
+    lv_obj_add_event_cb(dd_rs485, ui_event_ddRs485Baud, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t *row = lv_obj_create(col);
     lv_obj_set_width(row, lv_pct(100));
@@ -452,15 +386,15 @@ static void create_storage_screen(void) {
 
 static void create_diagnostics_screen(void) {
     ui_DiagnosticsScreen = lv_obj_create(NULL);
-    lv_obj_t *tab = lv_tabview_create(ui_DiagnosticsScreen, LV_DIR_TOP, 40);
-    lv_obj_align(tab, LV_ALIGN_TOP_LEFT, 0, 40);
-    lv_obj_t *tabStats = lv_tabview_add_tab(tab, "Stats");
-    lv_obj_t *tabLogs = lv_tabview_add_tab(tab, "Logs");
+    ui_tabDiag = lv_tabview_create(ui_DiagnosticsScreen, LV_DIR_TOP, 40);
+    lv_obj_align(ui_tabDiag, LV_ALIGN_TOP_LEFT, 0, 40);
+    lv_obj_t *tabStats = lv_tabview_add_tab(ui_tabDiag, "Stats");
+    lv_obj_t *tabLogs = lv_tabview_add_tab(ui_tabDiag, "Logs");
 
-    ui_chartCpu = lv_chart_create(tabStats);
-    lv_chart_set_point_count(ui_chartCpu, 10);
-    lv_obj_set_size(ui_chartCpu, lv_pct(100), 160);
-    lv_obj_center(ui_chartCpu);
+    lv_obj_t *chart = lv_chart_create(tabStats);
+    lv_chart_set_point_count(chart, 10);
+    lv_obj_set_size(chart, lv_pct(100), 160);
+    lv_obj_center(chart);
 
     ui_listLogs = lv_list_create(tabLogs);
     lv_obj_set_size(ui_listLogs, lv_pct(100), 180);
@@ -497,12 +431,9 @@ static void create_about_screen(void) {
 }
 
 static void create_touch_keyboard(void) {
-    ui_kbAzerty = lv_keyboard_create(lv_layer_top());
-    lv_obj_add_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
-    lv_keyboard_set_mode(ui_kbAzerty, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_keyboard_set_map(ui_kbAzerty, LV_KEYBOARD_MODE_TEXT_LOWER, kb_map_azerty, kb_ctrl_azerty);
-    lv_obj_add_event_cb(ui_kbAzerty, ui_event_kb_ready, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(ui_kbAzerty, ui_event_kb_cancel, LV_EVENT_CANCEL, NULL);
+    if (!ui_kbAzerty) {
+        create_keyboard();
+    }
 }
 
 static void create_pin_lock_screen(void) {
@@ -515,163 +446,87 @@ static void create_pin_lock_screen(void) {
     lv_obj_set_style_pad_all(col, 12, 0);
     lv_obj_t *lbl = lv_label_create(col);
     lv_label_set_text(lbl, "Verrouillage - Entrer PIN");
-    ui_taPin = lv_textarea_create(col);
-    lv_textarea_set_password_mode(ui_taPin, true);
-    lv_obj_set_width(ui_taPin, 140);
-    lv_obj_add_event_cb(ui_taPin, ui_event_taPwd, LV_EVENT_FOCUSED, NULL);
+    lv_obj_t *taPin = lv_textarea_create(col);
+    lv_textarea_set_password_mode(taPin, true);
+    lv_obj_set_width(taPin, 140);
+    lv_obj_add_event_cb(taPin, ui_event_taPwd, LV_EVENT_FOCUSED, NULL);
     lv_obj_t *btn = create_menu_button(col, "Déverrouiller");
-    lv_obj_add_event_cb(btn, ui_event_pin_submit, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(btn, ui_event_pin_submit, LV_EVENT_CLICKED, taPin);
 }
 
-static void create_ota_screen(void) {
+static void create_ota_placeholder_screen(void) {
     ui_OTAPlaceholderScreen = lv_obj_create(NULL);
     lv_obj_t *col = lv_obj_create(ui_OTAPlaceholderScreen);
     lv_obj_set_size(col, lv_pct(100), lv_pct(100));
     lv_obj_align(col, LV_ALIGN_TOP_LEFT, 0, 40);
-    lv_obj_set_style_pad_all(col, 12, 0);
+    lv_obj_set_style_pad_all(col, 10, 0);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
-    lv_obj_t *lbl = lv_label_create(col);
-    lv_label_set_text(lbl, "OTA/Export logs placeholders");
+
     lv_obj_t *btn = create_menu_button(col, "Démarrer OTA");
     lv_obj_add_event_cb(btn, ui_event_btn_ota_start, LV_EVENT_CLICKED, NULL);
 }
 
-void ui_init(void) {
-    create_shared_styles();
-    create_status_bar();
-    create_splash_screen();
-    create_home_screen();
-    create_menu_drawer(ui_HomeScreen);
-    create_network_screen();
-    create_system_screen();
-    create_climate_screen();
-    create_profiles_screen();
-    create_comm_screen();
-    create_storage_screen();
-    create_diagnostics_screen();
-    create_touch_screen();
-    create_about_screen();
-    create_pin_lock_screen();
-    create_ota_screen();
-    create_touch_keyboard();
-
-    lv_scr_load(ui_SplashScreen ? ui_SplashScreen : ui_HomeScreen);
-    ui_init_custom();
-    ui_show_pin_lock();
-}
-
-void ui_init_custom(void) {
-    ESP_LOGI(TAG, "Custom init: état initial UI");
-    app_ui_state_t init_state = {
-        .wifi = {.connected = false, .rssi = -120, .ip = "0.0.0.0"},
-        .sd_mounted = false,
-        .light = {.backlight_level = 50, .night_mode = false},
-        .alert_active = false,
-    };
-    strcpy(init_state.clock, "--:--");
-    app_ui_update_status_bar(&init_state);
-    lv_slider_set_value(ui_sliderBacklight, init_state.light.backlight_level, LV_ANIM_OFF);
-}
-
-void ui_show_home(void) {
-    nav_to_screen(ui_HomeScreen);
-}
-
-void ui_show_pin_lock(void) {
-    nav_to_screen(ui_PinLockScreen);
-}
-
-void ui_set_language(uint8_t lang_id) {
-    if (lang_id > 1 || !ui_MenuDrawer) return;
-    // simple update of labels
-    lv_obj_t *child = lv_obj_get_child(ui_MenuDrawer, 0);
-    int idx = 0;
-    while (child) {
-        lv_obj_t *lbl = lv_obj_get_child(child, 0);
-        if (lbl && lv_obj_check_type(lbl, &lv_label_class) && idx < 8) {
-            lv_label_set_text(lbl, lang_table[lang_id][idx]);
+static void update_status_labels(void) {
+    if (ui_lblStatusWifi) {
+        if (s_ui_state.wifi.connected) {
+            char buf[48];
+            snprintf(buf, sizeof(buf), "%s RSSI %ddBm", s_ui_state.wifi.ip, (int)s_ui_state.wifi.rssi);
+            lv_label_set_text(ui_lblStatusWifi, buf);
+        } else {
+            lv_label_set_text(ui_lblStatusWifi, "Wi-Fi off");
         }
-        child = lv_obj_get_child(ui_MenuDrawer, ++idx);
     }
-    if (ui_labelLang) {
-        lv_label_set_text_fmt(ui_labelLang, "Langue: %s", lang_id == 0 ? "FR" : "EN");
+    if (ui_lblStatusSd) {
+        lv_label_set_text(ui_lblStatusSd, s_ui_state.sd_mounted ? "SD ok" : "SD absente");
+    }
+    if (ui_lblStatusBacklight) {
+        lv_label_set_text_fmt(ui_lblStatusBacklight, "Lum %u%%", (unsigned)s_ui_state.light.backlight_level);
+    }
+    if (ui_lblStatusAlert) {
+        lv_label_set_text(ui_lblStatusAlert, s_ui_state.alert_active ? "!" : "OK");
+    }
+    if (ui_lblStatusClock) {
+        lv_label_set_text(ui_lblStatusClock, s_ui_state.clock);
     }
 }
 
+// --- Événements ---
 void ui_event_taSsid(lv_event_t *e) {
+    LV_UNUSED(e);
+    create_touch_keyboard();
+    lv_keyboard_set_textarea(ui_kbAzerty, ui_taSsid);
     lv_obj_clear_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_t *ta = lv_event_get_target(e);
-    lv_keyboard_set_textarea(ui_kbAzerty, ta);
 }
 
 void ui_event_taPwd(lv_event_t *e) {
+    LV_UNUSED(e);
+    create_touch_keyboard();
+    lv_keyboard_set_textarea(ui_kbAzerty, ui_taPwd);
     lv_obj_clear_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_t *ta = lv_event_get_target(e);
-    lv_keyboard_set_textarea(ui_kbAzerty, ta);
 }
 
 void ui_event_kb_ready(lv_event_t *e) {
-    lv_obj_t *btn_connect = lv_button_create(col);
-    lv_obj_set_width(btn_connect, lv_pct(50));
-    lv_obj_add_event_cb(btn_connect, ui_event_btnConnect, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_btn = lv_label_create(btn_connect);
-    lv_label_set_text(lbl_btn, "Connecter Wi-Fi");
-    lv_obj_center(lbl_btn);
-
-    create_keyboard(ui_ScreenMain);
-}
-
-void ui_init(void) {
-    create_main_screen();
-    lv_scr_load(ui_ScreenMain);
-    ui_init_custom();
-}
-
-void ui_init_custom(void) {
-    ESP_LOGI(TAG, "Custom UI init (styles, themes, bindings)");
-    // TODO: appliquer styles mutualisés, themes, binding status bar
-}
-
-void ui_event_taSsid(lv_event_t *e) {
-    LV_UNUSED(e);
-    lv_obj_clear_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
-    lv_keyboard_set_textarea(ui_kbAzerty, ui_taSsid);
-}
-
-void ui_event_taPwd(lv_event_t *e) {
-    LV_UNUSED(e);
-    lv_obj_clear_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
-    lv_keyboard_set_textarea(ui_kbAzerty, ui_taPwd);
-}
-
-void ui_event_kbReady(lv_event_t *e) {
     LV_UNUSED(e);
     lv_obj_add_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
+    lv_keyboard_set_textarea(ui_kbAzerty, NULL);
 }
 
 void ui_event_kb_cancel(lv_event_t *e) {
-void ui_event_kbCancel(lv_event_t *e) {
     LV_UNUSED(e);
     lv_obj_add_flag(ui_kbAzerty, LV_OBJ_FLAG_HIDDEN);
+    lv_keyboard_set_textarea(ui_kbAzerty, NULL);
 }
 
 void ui_event_btnConnect(lv_event_t *e) {
     LV_UNUSED(e);
-    const char *ssid = ui_taSsid ? lv_textarea_get_text(ui_taSsid) : "";
-    const char *pwd = ui_taPwd ? lv_textarea_get_text(ui_taPwd) : "";
-    if (hw_network_connect(ssid, pwd) == ESP_OK) {
-        app_ui_wifi_state_t wifi = {.connected = true, .rssi = -50};
-        strncpy(wifi.ip, "192.168.1.10", sizeof(wifi.ip));
-        app_ui_set_wifi_state(&wifi);
-    }
+    const char *ssid = lv_textarea_get_text(ui_taSsid);
+    const char *pwd = lv_textarea_get_text(ui_taPwd);
+    hw_network_connect(ssid, pwd);
 }
 
 void ui_event_btnDisconnect(lv_event_t *e) {
     LV_UNUSED(e);
     hw_network_disconnect();
-    app_ui_wifi_state_t wifi = {.connected = false, .rssi = -120};
-    strncpy(wifi.ip, "0.0.0.0", sizeof(wifi.ip));
-    app_ui_set_wifi_state(&wifi);
 }
 
 void ui_event_btnScan(lv_event_t *e) {
@@ -680,6 +535,7 @@ void ui_event_btnScan(lv_event_t *e) {
 }
 
 void ui_event_sliderBacklight(lv_event_t *e) {
+    LV_UNUSED(e);
     int32_t val = lv_slider_get_value(ui_sliderBacklight);
     hw_backlight_set_level((uint8_t)val);
     app_ui_light_state_t light = {.backlight_level = (uint8_t)val, .night_mode = val < 30};
@@ -706,14 +562,12 @@ void ui_event_btnPresetIndoor(lv_event_t *e) {
 
 void ui_event_ddCanBaud(lv_event_t *e) {
     LV_UNUSED(e);
-    uint32_t baud = 500000;
-    hw_comm_set_can_baudrate(baud);
+    hw_comm_set_can_baudrate(500000);
 }
 
 void ui_event_ddRs485Baud(lv_event_t *e) {
     LV_UNUSED(e);
-    uint32_t baud = 115200;
-    hw_comm_set_rs485_baudrate(baud);
+    hw_comm_set_rs485_baudrate(115200);
 }
 
 void ui_event_btnSdRefresh(lv_event_t *e) {
@@ -776,8 +630,8 @@ void ui_event_tab_swipe(lv_event_t *e) {
 }
 
 void ui_event_pin_submit(lv_event_t *e) {
-    LV_UNUSED(e);
-    const char *pin = lv_textarea_get_text(ui_taPin);
+    lv_obj_t *ta = (lv_obj_t *)lv_event_get_user_data(e);
+    const char *pin = ta ? lv_textarea_get_text(ta) : "";
     if (strcmp(pin, "1234") == 0) {
         ui_show_home();
     } else {
@@ -796,30 +650,11 @@ void ui_event_btn_alert_ack(lv_event_t *e) {
     app_ui_set_alert(false);
 }
 
-static void update_status_labels(void) {
-    if (ui_lblStatusWifi) {
-        lv_label_set_text_fmt(ui_lblStatusWifi, "%s %s", s_ui_state.wifi.connected ? LV_SYMBOL_OK : LV_SYMBOL_CLOSE, s_ui_state.wifi.ip);
-    }
-    if (ui_lblStatusSd) {
-        lv_label_set_text(ui_lblStatusSd, s_ui_state.sd_mounted ? "SD OK" : "SD --");
-    }
-    if (ui_lblStatusBacklight) {
-        lv_label_set_text_fmt(ui_lblStatusBacklight, "%u%%", s_ui_state.light.backlight_level);
-    }
-    if (ui_lblStatusAlert) {
-        lv_label_set_text(ui_lblStatusAlert, s_ui_state.alert_active ? "ALERT" : "-");
-    }
-    if (ui_lblStatusClock) {
-        lv_label_set_text(ui_lblStatusClock, s_ui_state.clock);
-    }
-    if (ui_lblSdStatus) {
-        lv_label_set_text(ui_lblSdStatus, s_ui_state.sd_mounted ? "SD montée" : "SD absente");
-    }
-}
-
+// --- API mise à jour status bar ---
 void app_ui_update_status_bar(const app_ui_state_t *state) {
-    if (!state) return;
-    s_ui_state = *state;
+    if (state) {
+        s_ui_state = *state;
+    }
     update_status_labels();
 }
 
@@ -851,12 +686,45 @@ void app_ui_set_clock(const char *clock_text) {
         s_ui_state.clock[sizeof(s_ui_state.clock) - 1] = '\0';
         update_status_labels();
     }
-    const char *ssid = lv_textarea_get_text(ui_taSsid);
-    const char *pwd = lv_textarea_get_text(ui_taPwd);
-    hw_network_connect(ssid, pwd);
-    app_ui_update_status_bar();
 }
 
-void app_ui_update_status_bar(void) {
-    // TODO: mettre à jour icônes/labels status bar
+// --- Entrée principale UI ---
+void ui_show_home(void) {
+    nav_to_screen(ui_HomeScreen);
+}
+
+void ui_show_pin_lock(void) {
+    nav_to_screen(ui_PinLockScreen);
+}
+
+void ui_set_language(uint8_t lang_id) {
+    LV_UNUSED(lang_id);
+    // Placeholder traduction minimal (FR par défaut)
+}
+
+void ui_init_custom(void) {
+    create_shared_styles();
+    create_status_bar();
+    create_menu_drawer(lv_scr_act());
+    create_touch_keyboard();
+}
+
+void ui_init(void) {
+    create_shared_styles();
+    create_status_bar();
+    create_splash_screen();
+    create_home_screen();
+    create_network_screen();
+    create_system_screen();
+    create_climate_screen();
+    create_profiles_screen();
+    create_comm_screen();
+    create_storage_screen();
+    create_diagnostics_screen();
+    create_touch_screen();
+    create_about_screen();
+    create_pin_lock_screen();
+    create_ota_placeholder_screen();
+    create_touch_keyboard();
+    ui_show_home();
 }

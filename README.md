@@ -14,6 +14,19 @@ idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
+### Dépannage rapide (Windows)
+
+Si la configuration CMake échoue après une mise à jour d’ESP-IDF, vérifiez que l’environnement est chargé
+(`export.bat`/`export.ps1`) et relancez une configuration propre :
+
+```powershell
+python tools/validate_idf_env.py
+idf.py fullclean
+idf.py set-target esp32s3
+```
+
+Les étapes détaillées sont décrites dans `docs/BUILD_TROUBLESHOOTING.md` (nettoyage complet, vérification de la version ESP-IDF et des dépendances).
+
 ## Notes d’intégration
 - Backlight piloté par LEDC (PWM 20 kHz) sur `BACKLIGHT_GPIO` (configurable dans `app_hw.c`).
 - Driver RGB générique (buffers double en PSRAM) via `esp_lcd_new_rgb_panel`; ajuster timings/assignations GPIO selon la carte Waveshare.

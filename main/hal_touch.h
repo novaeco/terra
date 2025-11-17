@@ -2,7 +2,7 @@
 
 #include "esp_err.h"
 #include "lvgl.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 
 #define TOUCH_I2C_PORT I2C_NUM_0
 #define TOUCH_I2C_SCL 9

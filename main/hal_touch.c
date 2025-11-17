@@ -43,11 +43,11 @@ esp_err_t hal_touch_init(lv_display_t *display, lv_indev_t **out_indev)
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(i2c_bus, &io_config, &io_handle));
     ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_gt911(io_handle, &touch_config, &tp));
 
-    esp_lvgl_port_touch_cfg_t touch_cfg = {
+    lvgl_port_touch_cfg_t touch_cfg = {
         .disp = display,
         .handle = tp,
     };
-    lvgl_indev = esp_lvgl_port_add_touch(&touch_cfg);
+    lvgl_indev = lvgl_port_add_touch(&touch_cfg);
 
     if (!lvgl_indev)
     {

@@ -1,6 +1,7 @@
 #include "hal_ioexp_ch422g.h"
 #include "esp_log.h"
 #include "driver/i2c.h"
+#include "freertos/FreeRTOS.h"
 #include "hal_touch.h"
 
 static const char *TAG = "ch422g";

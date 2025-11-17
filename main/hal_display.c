@@ -15,7 +15,7 @@ static lv_display_t *lvgl_display = NULL;
 
 static bool rgb_panel_on_vsync_event(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx)
 {
-    esp_lvgl_port_flush_ready(lvgl_display);
+    lvgl_port_flush_ready(lvgl_display);
     return false;
 }
 
@@ -33,7 +33,6 @@ esp_err_t hal_display_init(lv_display_t **out_display)
 
     esp_lcd_rgb_panel_config_t panel_config = {
         .data_width = 16,
-        .psram_trans_align = 64,
         .clk_src = LCD_CLK_SRC_PLL160M,
         .timings = {
             .pclk_hz = 15000000,
@@ -95,12 +94,12 @@ esp_err_t hal_display_init(lv_display_t **out_display)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(rgb_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(rgb_panel));
 
-    esp_lvgl_port_display_cfg_t disp_cfg = {
+    lvgl_port_display_cfg_t disp_cfg = {
         .panel_handle = rgb_panel,
         .buffer_size = LCD_H_RES * 80,
         .double_buffer = true,
-        .h_res = LCD_H_RES,
-        .v_res = LCD_V_RES,
+        .hres = LCD_H_RES,
+        .vres = LCD_V_RES,
         .monochrome = false,
         .color_format = LV_COLOR_FORMAT_RGB565,
         .flags = {
@@ -108,7 +107,7 @@ esp_err_t hal_display_init(lv_display_t **out_display)
         },
     };
 
-    lvgl_display = esp_lvgl_port_add_disp(&disp_cfg);
+    lvgl_display = lvgl_port_add_disp(&disp_cfg);
     if (!lvgl_display)
     {
         ESP_LOGE(TAG, "Failed to register LVGL display");

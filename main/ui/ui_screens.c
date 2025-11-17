@@ -30,7 +30,7 @@ static void create_header(lv_obj_t *parent, const char *title)
     lv_obj_t *label = lv_label_create(header);
     lv_label_set_text(label, title);
     lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(label, lv_theme_default_get()->font_large, 0);
+    lv_obj_set_style_text_font(label, lv_theme_get_font_large(label), 0);
     lv_obj_align(label, LV_ALIGN_LEFT_MID, 20, 0);
 }
 
@@ -48,7 +48,7 @@ void ui_create_home_screen(void)
 
     lv_obj_t *title = lv_label_create(container);
     lv_label_set_text(title, "Interface de base LVGL 9.2");
-    lv_obj_set_style_text_font(title, lv_theme_default_get()->font_large, 0);
+    lv_obj_set_style_text_font(title, lv_theme_get_font_large(title), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
     lv_obj_t *btn_test = lv_btn_create(container);

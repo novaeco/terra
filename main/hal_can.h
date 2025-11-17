@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
 #include <stdbool.h>
 #include "driver/twai.h"
 

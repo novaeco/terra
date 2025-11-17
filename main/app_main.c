@@ -38,14 +38,14 @@ void app_main(void)
 
     lvgl_mutex = xSemaphoreCreateMutex();
 
-    esp_lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
     lvgl_cfg.task_priority = 4;
     lvgl_cfg.task_stack = 8192;
     lvgl_cfg.timer_period_ms = 5;
     lvgl_cfg.task_affinity = 1;
     lvgl_cfg.spinlock_wait_time_ms = 100;
     lvgl_cfg.mutex = lvgl_mutex;
-    ESP_ERROR_CHECK(esp_lvgl_port_init(&lvgl_cfg));
+    ESP_ERROR_CHECK(lvgl_port_init(&lvgl_cfg));
 
     lv_display_t *display = NULL;
     lv_indev_t *indev = NULL;
@@ -71,9 +71,9 @@ void app_main(void)
 
     while (true)
     {
-        esp_lvgl_port_lock(0);
+        lvgl_port_lock(0);
         lv_timer_handler();
-        esp_lvgl_port_unlock();
+        lvgl_port_unlock();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

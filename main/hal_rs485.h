@@ -1,8 +1,10 @@
 #pragma once
 
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
 #include <stddef.h>
 #include <stdbool.h>
+#include "driver/uart.h"
 
 #define RS485_UART_PORT UART_NUM_1
 #define RS485_TXD 33

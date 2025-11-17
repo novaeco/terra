@@ -17,6 +17,18 @@ idf_component_register(
     REQUIRES
         lvgl
         esp_lvgl_port
+        driver
+        esp_lcd
+        esp_lcd_touch
+        nvs_flash
+        esp_timer
+        esp_vfs_fat
+        sdmmc
+        esp_driver_gpio
+        esp_driver_i2c
+        esp_driver_spi
+        esp_driver_uart
+        esp_pm
 )
 
 set_property(TARGET ${COMPONENT_LIB} PROPERTY C_STANDARD 11)

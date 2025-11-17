@@ -1,4 +1,4 @@
-# Spécification UI terrariophile – LVGL 9.2 / SquareLine 1.5.4 – ESP32-S3-Touch-LCD-7B
+# Spécification UI terrariophile – LVGL 9.4 / SquareLine 1.5.4 – ESP32-S3-Touch-LCD-7B
 
 ## 2) Architecture UI & navigation
 - **Application** : Contrôleur terrariophile avancé (gestion environnementale multi-capteurs, actionneurs, alarmes, profils).
@@ -44,7 +44,7 @@
 - **Résolution** : 1024×600 paysage.
 - **Color depth** : 16 bits RGB565 (équilibre qualité/RAM pour framebuffer RGB + PSRAM autorisée).
 - **Buffers LVGL** : Double buffer 20–25% écran en PSRAM recommandé (dma-friendly). Ajuster à 1/5 écran si RAM serrée.
-- **Version LVGL** : 9.2 (API v9 stricte, LV_USE_EVDEV off, LV_USE_FREETYPE off par défaut).
+- **Version LVGL** : 9.4 (API v9 stricte, LV_USE_EVDEV off, LV_USE_FREETYPE off par défaut).
 - **Écrans à créer** : cf. liste section 2. Chaque écran avec conteneur racine full-screen + `ui_StatusBar` et éventuellement `ui_MenuDrawer` superposés (layers SquareLine) pour cohérence.
 
 ### Arborescences de widgets (extraits clés)
@@ -87,7 +87,7 @@
   - `style_label_value` : fonte medium, couleur texte principale.
   - Mutualiser au max (4–6 styles) pour limiter RAM; associer via classes SquareLine, pas de styles individuels multiples.
 
-### Gestion des événements LVGL 9.2
+### Gestion des événements LVGL 9.4
 - Événements clés : `LV_EVENT_CLICKED`, `LV_EVENT_PRESSED`, `LV_EVENT_RELEASED`, `LV_EVENT_VALUE_CHANGED`, `LV_EVENT_READY`, `LV_EVENT_CANCEL`, `LV_EVENT_FOCUSED`, `LV_EVENT_DEFOCUSED`.
 - Convention callbacks générés : `ui_event_btnConnect()`, `ui_event_sliderBacklight()`, `ui_event_ddCanBaud()`, `ui_event_swFogger()`, etc.
 - Appels logique métier (fichiers app_hw.c / app_logic.c) :
@@ -107,7 +107,7 @@
 - **Test tactile** : canvas avec cibles, affichage coordonnées de `lv_event_get_point()`, bouton Valider pour marquer test OK.
 - **Réglage backlight** : slider + boutons presets appellent `hw_backlight_set_level()` et `app_ui_update_status_bar()`; mode jour/nuit applique styles globaux.
 
-## 5) Intégration ESP-IDF + LVGL 9.2 + SquareLine (squelette)
+## 5) Intégration ESP-IDF + LVGL 9.4 + SquareLine (squelette)
 Voir fichiers `main/app_main.c`, `main/ui_init.c`, `main/ui_events.c`, `main/app_hw.h|c`, `main/CMakeLists.txt`, `sdkconfig.defaults`, `partitions.csv`.
 
 ## 6) Clavier virtuel AZERTY
@@ -123,7 +123,7 @@ Voir fichiers `main/app_main.c`, `main/ui_init.c`, `main/ui_events.c`, `main/app
 
 ## 7) Qualité et livrable
 - Noms d’écrans, widgets, callbacks cohérents (préfixe `ui_`).
-- Code C compatible ESP-IDF 6.x, LVGL 9.2, CMake moderne.
+- Code C compatible ESP-IDF 6.1, LVGL 9.4, CMake moderne.
 - Styles mutualisés, buffers LVGL dimensionnés, PSRAM recommandé.
 - TODO explicites pour drivers display/tactile et logique métier.
 

@@ -8,6 +8,7 @@
 #if CONFIG_SPIRAM_SUPPORT
 #include "esp_psram.h"
 #endif
+#include "esp_psram.h"
 #include "driver/gpio.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_interface.h"

@@ -427,7 +427,7 @@ static void create_about_screen(void) {
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
 
     lv_obj_t *lbl = lv_label_create(col);
-    lv_label_set_text(lbl, "Contrôleur terrariophile\nFirmware v0.1.0\nLVGL 9.2 / ESP-IDF 6.x");
+    lv_label_set_text(lbl, "Contrôleur terrariophile\nFirmware v0.1.0\nLVGL 9.4 / ESP-IDF 6.1");
 }
 
 static void create_touch_keyboard(void) {

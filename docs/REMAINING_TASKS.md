@@ -17,7 +17,7 @@ Toutes les actions prévues dans la liste initiale ont été implémentées :
 - Performance et packaging : buffers LVGL double en PSRAM, sdkconfig orienté RGB/LVGL/Wi-Fi, table de partitions OTA.
 
 Aucune tâche additionnelle n’est ouverte.
-# Reste à faire pour compléter la demande principale (UI terrariophile SquareLine/LVGL 9.2)
+# Reste à faire pour compléter la demande principale (UI terrariophile SquareLine/LVGL 9.4)
 
 ## 1. Modélisation complète dans SquareLine Studio 1.5.4
 - Créer tous les écrans listés dans `docs/UI_SPEC.md` (ui_SplashScreen, ui_HomeScreen, ui_StatusBar, ui_MenuDrawer, ui_NetworkScreen, ui_SystemScreen, ui_ClimateScreen, ui_ProfilesScreen, ui_CommScreen, ui_StorageScreen, ui_DiagnosticsScreen, ui_TouchTestScreen, ui_AboutScreen) avec les hiérarchies de widgets décrites.
@@ -25,8 +25,8 @@ Aucune tâche additionnelle n’est ouverte.
 - Configurer les callbacks LVGL selon les conventions `ui_event_*` et lier les gestures (swipe onglets, tap, long-press) là où prévu.
 
 ## 2. Génération et intégration du code SquareLine
-- Exporter le projet SquareLine en C (LVGL 9.2) et remplacer les placeholders `ui_init.c`/`ui.h` par les fichiers générés (`ui.c`, `ui.h`, `ui_events.c`, `ui_helpers.c`).
-- Vérifier la compatibilité avec ESP-IDF 6.x et ajuster `main/CMakeLists.txt` pour inclure tous les fichiers générés.
+- Exporter le projet SquareLine en C (LVGL 9.4) et remplacer les placeholders `ui_init.c`/`ui.h` par les fichiers générés (`ui.c`, `ui.h`, `ui_events.c`, `ui_helpers.c`).
+- Vérifier la compatibilité avec ESP-IDF 6.1 et ajuster `main/CMakeLists.txt` pour inclure tous les fichiers générés.
 - Ajouter les assets (icônes, logos) en formats légers (PNG compressé) et configurer les chemins d’export vers le dossier `main/`.
 
 ## 3. Implémentation des drivers hardware

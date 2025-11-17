@@ -1,13 +1,14 @@
 # UIperso
 
-Spécification et squelette ESP-IDF 6.x + LVGL 9.2 pour une UI terrariophile ciblant la carte Waveshare ESP32-S3-Touch-LCD-7B (1024×600, RGB, tactile capacitif, microSD, RS485, CAN).
+Spécification et squelette ESP-IDF 6.1 + LVGL 9.4 pour une UI terrariophile ciblant la carte Waveshare ESP32-S3-Touch-LCD-7B (1024×600, RGB, tactile capacitif, microSD, RS485, CAN).
 
 ## Contenu
-- Documentation fonctionnelle : `docs/UI_SPEC.md` (architecture complète SquareLine/LVGL 9.2, clavier AZERTY, navigation, callbacks).
+- Documentation fonctionnelle : `docs/UI_SPEC.md` (architecture complète SquareLine/LVGL 9.4, clavier AZERTY, navigation, callbacks).
 - Implémentation ESP-IDF : `main/app_main.c` (init LVGL, driver RGB, tick), `main/ui_init.c` (écrans complets, status bar, menu, AZERTY, PIN/OTA), `main/app_hw.c` (backlight LEDC, Wi-Fi STA, microSD, CAN/RS485, diagnostics, test tactile).
-- Configuration : `sdkconfig.defaults` (PSRAM, LVGL RGB, Wi-Fi, TWAI), `partitions.csv` (OTA double bank + SPIFFS).
+- Configuration : `sdkconfig.defaults` (PSRAM, LVGL RGB, Wi-Fi, TWAI) aligné ESP-IDF 6.1/LVGL 9.4, `partitions.csv` (OTA double bank + SPIFFS).
 
 ## Construire et flasher
+ESP-IDF **6.1.x** (toolchain exporté) et LVGL **9.4** via le composant `lvgl` doivent être installés dans l’environnement (`IDF_PATH` valide).
 ```bash
 idf.py set-target esp32s3
 idf.py build

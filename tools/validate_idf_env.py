@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -71,14 +72,33 @@ def validate_tools(idf_path: Path) -> int:
     return 2
 
 
-def print_idf_version(idf_path: Path) -> None:
+def _parse_version(text: str) -> Tuple[int, int, int]:
+    cleaned = text.strip().lstrip("vV")
+    parts = cleaned.replace("-dev", "").split(".")
+    nums = []
+    for p in parts[:3]:
+        try:
+            nums.append(int(p))
+        except ValueError:
+            nums.append(0)
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums)  # type: ignore[return-value]
+
+
+def print_idf_version(idf_path: Path) -> int:
     version_file = idf_path / "version.txt"
     if version_file.is_file():
         version = version_file.read_text(encoding="utf-8", errors="ignore").strip()
         if version:
             _info(f"ESP-IDF version détectée: {version}")
-            return
+            parsed = _parse_version(version)
+            if parsed < (6, 1, 0):
+                _err("ESP-IDF >= 6.1 requis pour LVGL 9.4. Mettez à jour votre toolchain avant de construire ce projet.")
+                return 1
+            return 0
     _warn("Impossible de lire version.txt (ESP-IDF pré-5.x ou installation incomplète).")
+    return 2
 def validate_argtable3_header(idf_path: Path) -> int:
     src_header = idf_path / "components" / "argtable3" / "argtable3" / "src" / "argtable3.h"
     include_dir = idf_path / "components" / "argtable3" / "include"
@@ -104,14 +124,14 @@ def validate_argtable3_header(idf_path: Path) -> int:
 
 def main() -> None:
     idf_path = validate_idf_path()
-    print_idf_version(idf_path)
-    status = validate_tools(idf_path)
+    status = print_idf_version(idf_path)
+    status = max(status, validate_tools(idf_path))
 
     if status == 0:
         _info("Environnement ESP-IDF détecté : prêt pour la configuration du projet.")
     else:
         _warn("Corrigez les avertissements ci-dessus avant de lancer idf.py.")
-    status = validate_argtable3_header(idf_path)
+    status = max(status, validate_argtable3_header(idf_path))
 
     if status == 0:
         _info("ESP-IDF environment looks sane for this project.")

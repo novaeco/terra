@@ -37,12 +37,14 @@ static void init_nvs(void) {
     ESP_ERROR_CHECK(err);
 }
 
-static bool lcd_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+static void lcd_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     if (s_panel) {
-        esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+        esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "RGB flush failed: %s", esp_err_to_name(err));
+        }
     }
     lv_display_flush_ready(disp);
-    return true;
 }
 
 static void init_display_driver(void) {

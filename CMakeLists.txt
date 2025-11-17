@@ -1,7 +1,0 @@
-cmake_minimum_required(VERSION 3.24.0)
-set(_extra_components "${CMAKE_SOURCE_DIR}/components")
-if(EXISTS "${_extra_components}")
-    set(EXTRA_COMPONENT_DIRS "${_extra_components}")
-endif()
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(uiperso)

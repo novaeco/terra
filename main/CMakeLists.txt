@@ -4,6 +4,8 @@ idf_component_register(
         "ui_init.c"
         "app_hw.c"
     INCLUDE_DIRS "."
+    REQUIRES lvgl esp_timer esp_wifi esp_event esp_netif nvs_flash driver esp_lcd esp_vfs_fat freertos
+)
     REQUIRES lvgl esp_timer esp_wifi nvs_flash driver
 )
 

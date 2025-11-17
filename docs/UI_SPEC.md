@@ -127,3 +127,10 @@ Voir fichiers `main/app_main.c`, `main/ui_init.c`, `main/ui_events.c`, `main/app
 - Styles mutualisés, buffers LVGL dimensionnés, PSRAM recommandé.
 - TODO explicites pour drivers display/tactile et logique métier.
 
+## 8) État d’implémentation dans le dépôt
+- Les écrans et callbacks décrits sont créés dans `main/ui_init.c` (status bar, menu latéral, écrans Réseau/Système/Climat/Profils/Comm/Storage/Diag/Tactile/About/OTA + PIN lock).
+- Clavier AZERTY complet (lettres/chiffres/ponctuation/accents) initialisé via `ui_kbAzerty` et callbacks `ui_event_taSsid/ui_event_taPwd/ui_event_kb_ready/ui_event_kb_cancel`.
+- Drivers et hooks matériels présents dans `main/app_hw.c` : backlight LEDC, Wi-Fi STA avec événements, montage microSD, CAN (TWAI) / RS485, diagnostics heap/PSRAM/CPU, stubs test tactile.
+- Initialisation LVGL + driver RGB PSRAM dans `main/app_main.c` (double buffer 20% écran, `esp_lcd_new_rgb_panel`).
+- Configurations associées : `sdkconfig.defaults` (PSRAM, LVGL RGB, Wi-Fi, TWAI) et `partitions.csv` (OTA double bank + SPIFFS).
+

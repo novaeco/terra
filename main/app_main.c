@@ -48,9 +48,15 @@ void app_main(void)
 
     // Prepare shared I2C bus and IO expander
     ESP_ERROR_CHECK(hal_touch_bus_init());
-    ESP_ERROR_CHECK(ch422g_init());
-    // Keep board in USB mode by default
-    ch422g_set_pin(CH422G_EXIO5, false);
+    if (ch422g_init() == ESP_OK)
+    {
+        // Keep board in USB mode by default
+        ch422g_set_pin(CH422G_EXIO5, false);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "CH422G not available, continuing without IO expander");
+    }
 
     lv_display_t *display = NULL;
     lv_indev_t *indev = NULL;

@@ -13,6 +13,9 @@
  ******************************************************************************/
 
 #include "sd.h"  // Include header file for SD card functions
+#include "esp_log.h"
+#include <string.h>
+#include <strings.h>
 
 // Global variable for SD card structure
 static sdmmc_card_t *card;
@@ -50,10 +53,10 @@ esp_err_t sd_mmc_init() {
 
     // Slot configuration for SDMMC
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot_config.width = 1,
-    slot_config.clk = EXAMPLE_PIN_CLK,
-    slot_config.cmd = EXAMPLE_PIN_CMD,
-    slot_config.d0 = EXAMPLE_PIN_D0,
+    slot_config.width = 1;
+    slot_config.clk = EXAMPLE_PIN_CLK;
+    slot_config.cmd = EXAMPLE_PIN_CMD;
+    slot_config.d0 = EXAMPLE_PIN_D0;
     // Enable internal pull-ups on the GPIOs
     slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 
@@ -181,6 +184,7 @@ int list_png_files(const char *base_path, char ***out_files) {
     DIR *dir = opendir(base_path);
     if (!dir) {
         printf("Erreur: impossible d'ouvrir le dossier %s\n", base_path);
+        *out_files = NULL;
         return -1;
     }
 

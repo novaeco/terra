@@ -16,6 +16,30 @@ static esp_err_t ch422g_write_reg(uint8_t reg, uint8_t value)
     return i2c_master_transmit(ch422g_dev, payload, sizeof(payload), pdMS_TO_TICKS(100));
 }
 
+static esp_err_t ch422g_detect_and_add_device(i2c_master_bus_handle_t bus)
+{
+    static const uint8_t candidate_addrs[] = {CH422G_I2C_ADDR, 0x40, 0x24};
+
+    for (size_t i = 0; i < sizeof(candidate_addrs) / sizeof(candidate_addrs[0]); i++)
+    {
+        uint8_t addr = candidate_addrs[i];
+        if (i2c_master_probe(bus, addr, pdMS_TO_TICKS(50)) == ESP_OK)
+        {
+            i2c_device_config_t dev_cfg = {
+                .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+                .device_address = addr,
+                .scl_speed_hz = 100000,
+            };
+            ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus, &dev_cfg, &ch422g_dev), TAG, "Failed to add CH422G device@0x%02X", addr);
+            ESP_LOGI(TAG, "CH422G detected at 0x%02X", addr);
+            return ESP_OK;
+        }
+    }
+
+    ESP_LOGE(TAG, "CH422G not detected on I2C bus");
+    return ESP_ERR_NOT_FOUND;
+}
+
 esp_err_t ch422g_init(void)
 {
     if (initialized)
@@ -29,12 +53,7 @@ esp_err_t ch422g_init(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = CH422G_I2C_ADDR,
-        .scl_speed_hz = 400000,
-    };
-    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus, &dev_cfg, &ch422g_dev), TAG, "Failed to add CH422G device");
+    ESP_RETURN_ON_ERROR(ch422g_detect_and_add_device(bus), TAG, "Device discovery failed");
 
     initialized = true;
     return ch422g_write_reg(0x01, output_state);

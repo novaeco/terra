@@ -14,6 +14,10 @@
 #include "rgb_lcd.h"
 #include "sdcard.h"
 
+#include "can_driver.h"
+#include "cs8501.h"
+#include "rs485_driver.h"
+
 static const char *TAG = "MAIN";
 
 static void lvgl_tick_cb(void *arg)
@@ -47,6 +51,21 @@ void app_main(void)
     lv_init();
     rgb_lcd_init();
     gt911_init();
+
+    esp_err_t can_err = can_bus_init();
+    if (can_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "CAN init failed: %s", esp_err_to_name(can_err));
+    }
+
+    esp_err_t rs485_err = rs485_init();
+    if (rs485_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "RS485 init failed: %s", esp_err_to_name(rs485_err));
+    }
+
+    cs8501_init();
+    ESP_LOGI(TAG, "Battery voltage: %.2f V, charging: %s", cs8501_get_battery_voltage(), cs8501_is_charging() ? "yes" : "no");
 
     esp_err_t sd_err = sdcard_init();
     if (sd_err == ESP_OK)

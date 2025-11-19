@@ -12,6 +12,7 @@
 #include "ch422g.h"
 #include "gt911_touch.h"
 #include "rgb_lcd.h"
+#include "sdcard.h"
 
 static const char *TAG = "MAIN";
 
@@ -32,7 +33,7 @@ static void touch_btn_event_cb(lv_event_t *e)
 void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_INFO);
-    ESP_LOGI(TAG, "ESP32-S3 UI phase 3 starting");
+    ESP_LOGI(TAG, "ESP32-S3 UI phase 4 starting");
 
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
@@ -47,6 +48,21 @@ void app_main(void)
     rgb_lcd_init();
     gt911_init();
 
+    esp_err_t sd_err = sdcard_init();
+    if (sd_err == ESP_OK)
+    {
+        ESP_LOGI(TAG, "microSD mounted successfully");
+        esp_err_t test_err = sdcard_test_file();
+        if (test_err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "microSD test file failed (%s)", esp_err_to_name(test_err));
+        }
+    }
+    else
+    {
+        ESP_LOGW(TAG, "microSD initialization failed (%s)", esp_err_to_name(sd_err));
+    }
+
     const esp_timer_create_args_t tick_timer_args = {
         .callback = &lvgl_tick_cb,
         .dispatch_method = ESP_TIMER_TASK,
@@ -57,7 +73,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_timer_start_periodic(tick_timer, 1000));
 
     lv_obj_t *label = lv_label_create(lv_scr_act());
-    lv_label_set_text(label, "ESP32-S3 UI Phase 3");
+    lv_label_set_text(label, "ESP32-S3 UI Phase 4");
     lv_obj_center(label);
 
     lv_obj_t *btn = lv_btn_create(lv_scr_act());

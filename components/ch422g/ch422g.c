@@ -3,13 +3,10 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
-#include "driver/i2c.h"
 
-#define CH422G_I2C_PORT            I2C_NUM_0
-#define CH422G_I2C_SDA_GPIO        GPIO_NUM_8   // Waveshare ESP32-S3-Touch-LCD-7B shared I2C SDA
-#define CH422G_I2C_SCL_GPIO        GPIO_NUM_9   // Waveshare ESP32-S3-Touch-LCD-7B shared I2C SCL
-#define CH422G_I2C_SPEED_HZ        400000
-#define CH422G_I2C_TIMEOUT_TICKS   0            // Non-blocking: do not wait if the bus is busy
+#include "i2c_bus_shared.h"
+
+#define CH422G_I2C_TIMEOUT_TICKS   i2c_bus_shared_timeout_ticks()
 
 #define IOEXT_I2C_ADDRESS          0x24         // CH32V003 (Waveshare IO extension)
 
@@ -25,7 +22,6 @@ static const char *TAG = "CH422G";
 static struct
 {
     bool initialized;
-    bool bus_ready;
     bool io_ready;
     uint8_t outputs;
 } s_ctx;
@@ -39,7 +35,7 @@ static esp_err_t ch422g_write_outputs(void)
 
     const uint8_t payload = s_ctx.outputs;
     const esp_err_t err = i2c_master_write_to_device(
-        CH422G_I2C_PORT,
+        i2c_bus_shared_port(),
         IOEXT_I2C_ADDRESS,
         &payload,
         sizeof(payload),
@@ -77,36 +73,6 @@ static esp_err_t ch422g_set_output_bit(uint8_t bit_mask, bool high)
     return ch422g_write_outputs();
 }
 
-static esp_err_t ch422g_bus_init(void)
-{
-    if (s_ctx.bus_ready)
-    {
-        return ESP_OK;
-    }
-
-    i2c_config_t cfg = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = CH422G_I2C_SDA_GPIO,
-        .scl_io_num = CH422G_I2C_SCL_GPIO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = CH422G_I2C_SPEED_HZ,
-        .clk_flags = 0,
-    };
-
-    ESP_RETURN_ON_ERROR(i2c_param_config(CH422G_I2C_PORT, &cfg), TAG, "i2c_param_config failed");
-
-    esp_err_t err = i2c_driver_install(CH422G_I2C_PORT, I2C_MODE_MASTER, 0, 0, 0);
-    if ((err != ESP_OK) && (err != ESP_ERR_INVALID_STATE))
-    {
-        ESP_LOGE(TAG, "i2c_driver_install failed (%s)", esp_err_to_name(err));
-        return err;
-    }
-
-    s_ctx.bus_ready = true;
-    return ESP_OK;
-}
-
 esp_err_t ch422g_init(void)
 {
     if (s_ctx.initialized)
@@ -114,7 +80,7 @@ esp_err_t ch422g_init(void)
         return ESP_OK;
     }
 
-    ESP_RETURN_ON_ERROR(ch422g_bus_init(), TAG, "Failed to init I2C bus");
+    ESP_RETURN_ON_ERROR(i2c_bus_shared_init(), TAG, "Failed to init shared I2C bus");
     s_ctx.io_ready = true;
 
     // Initialize outputs to a safe default (all released/disabled)
@@ -133,7 +99,7 @@ esp_err_t ch422g_init(void)
 
 i2c_port_t ch422g_get_i2c_port(void)
 {
-    return CH422G_I2C_PORT;
+    return i2c_bus_shared_port();
 }
 
 bool ch422g_is_available(void)

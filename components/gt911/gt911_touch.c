@@ -12,9 +12,10 @@
 #include "ch422g.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
+#include "i2c_bus_shared.h"
 
 #define GT911_I2C_ADDRESS              0x5D
-#define GT911_I2C_TIMEOUT_MS           50
+#define GT911_I2C_TIMEOUT_TICKS        i2c_bus_shared_timeout_ticks()
 
 #define GT911_REG_COMMAND              0x8040
 #define GT911_REG_CONFIG               0x8047
@@ -59,13 +60,13 @@ static bool s_initialized = false;
 
 static inline i2c_port_t gt911_i2c_port(void)
 {
-    return ch422g_get_i2c_port();
+    return i2c_bus_shared_port();
 }
 
 static esp_err_t gt911_bus_init(void)
 {
-    // Bus is initialized by the IO extension driver; reuse it here to keep a single
-    // owner of the shared I2C pins.
+    ESP_RETURN_ON_ERROR(i2c_bus_shared_init(), TAG, "Shared I2C init failed");
+
     if (!ch422g_is_available())
     {
         ESP_LOGW(TAG, "IO extension not available; GT911 may not respond");
@@ -82,7 +83,7 @@ static esp_err_t gt911_write_u8(uint16_t reg, uint8_t value)
         GT911_I2C_ADDRESS,
         payload,
         sizeof(payload),
-        pdMS_TO_TICKS(GT911_I2C_TIMEOUT_MS));
+        GT911_I2C_TIMEOUT_TICKS);
 }
 
 static esp_err_t gt911_write(uint16_t reg, const uint8_t *data, size_t length)
@@ -103,7 +104,7 @@ static esp_err_t gt911_write(uint16_t reg, const uint8_t *data, size_t length)
         GT911_I2C_ADDRESS,
         payload,
         payload_len,
-        pdMS_TO_TICKS(GT911_I2C_TIMEOUT_MS));
+        GT911_I2C_TIMEOUT_TICKS);
 
     heap_caps_free(payload);
     return err;
@@ -119,7 +120,7 @@ static esp_err_t gt911_read(uint16_t reg, uint8_t *data, size_t length)
         sizeof(reg_buf),
         data,
         length,
-        pdMS_TO_TICKS(GT911_I2C_TIMEOUT_MS));
+        GT911_I2C_TIMEOUT_TICKS);
 }
 
 static void gt911_clear_status(void)

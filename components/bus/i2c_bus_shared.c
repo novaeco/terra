@@ -8,7 +8,7 @@
 #define SHARED_I2C_PORT         I2C_NUM_0
 #define SHARED_I2C_SDA_GPIO     GPIO_NUM_8
 #define SHARED_I2C_SCL_GPIO     GPIO_NUM_9
-#define SHARED_I2C_FREQ_HZ      400000
+#define SHARED_I2C_FREQ_HZ      100000
 #define SHARED_I2C_TIMEOUT_MS   50
 
 static const char *TAG = "i2c_bus_shared";

@@ -16,6 +16,8 @@
 
 #define GT911_I2C_ADDRESS              0x5D
 #define GT911_I2C_TIMEOUT_TICKS        i2c_bus_shared_timeout_ticks()
+#define GT911_I2C_RETRIES              3
+#define GT911_I2C_RETRY_DELAY_MS       3
 
 #define GT911_REG_COMMAND              0x8040
 #define GT911_REG_CONFIG               0x8047
@@ -44,6 +46,8 @@
 
 #define GT911_INT_GPIO                 GPIO_NUM_4   // IRQ routed directly to ESP32-S3 on Waveshare board
 
+#define GT911_LOG_TOUCH_EVENTS         0
+
 static const char *TAG = "GT911";
 
 typedef struct
@@ -57,6 +61,58 @@ typedef struct
 static lv_indev_t *s_indev = NULL;
 static gt911_point_t s_last_point;
 static bool s_initialized = false;
+
+static esp_err_t gt911_retry_write_to_device(const uint8_t *payload, size_t length)
+{
+    esp_err_t err = ESP_FAIL;
+
+    for (int attempt = 1; attempt <= GT911_I2C_RETRIES; ++attempt)
+    {
+        err = i2c_master_write_to_device(
+            gt911_i2c_port(),
+            GT911_I2C_ADDRESS,
+            payload,
+            length,
+            GT911_I2C_TIMEOUT_TICKS);
+
+        if (err == ESP_OK)
+        {
+            break;
+        }
+
+        ESP_LOGW(TAG, "GT911 write attempt %d/%d failed: %s", attempt, GT911_I2C_RETRIES, esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(GT911_I2C_RETRY_DELAY_MS));
+    }
+
+    return err;
+}
+
+static esp_err_t gt911_retry_write_read(const uint8_t *write_buf, size_t write_len, uint8_t *read_buf, size_t read_len)
+{
+    esp_err_t err = ESP_FAIL;
+
+    for (int attempt = 1; attempt <= GT911_I2C_RETRIES; ++attempt)
+    {
+        err = i2c_master_write_read_device(
+            gt911_i2c_port(),
+            GT911_I2C_ADDRESS,
+            write_buf,
+            write_len,
+            read_buf,
+            read_len,
+            GT911_I2C_TIMEOUT_TICKS);
+
+        if (err == ESP_OK)
+        {
+            break;
+        }
+
+        ESP_LOGW(TAG, "GT911 write-read attempt %d/%d failed: %s", attempt, GT911_I2C_RETRIES, esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(GT911_I2C_RETRY_DELAY_MS));
+    }
+
+    return err;
+}
 
 static inline i2c_port_t gt911_i2c_port(void)
 {
@@ -78,12 +134,7 @@ static esp_err_t gt911_bus_init(void)
 static esp_err_t gt911_write_u8(uint16_t reg, uint8_t value)
 {
     uint8_t payload[3] = {reg & 0xFF, (reg >> 8) & 0xFF, value};
-    return i2c_master_write_to_device(
-        gt911_i2c_port(),
-        GT911_I2C_ADDRESS,
-        payload,
-        sizeof(payload),
-        GT911_I2C_TIMEOUT_TICKS);
+    return gt911_retry_write_to_device(payload, sizeof(payload));
 }
 
 static esp_err_t gt911_write(uint16_t reg, const uint8_t *data, size_t length)
@@ -99,12 +150,7 @@ static esp_err_t gt911_write(uint16_t reg, const uint8_t *data, size_t length)
     memcpy(payload, header, sizeof(header));
     memcpy(payload + sizeof(header), data, length);
 
-    const esp_err_t err = i2c_master_write_to_device(
-        gt911_i2c_port(),
-        GT911_I2C_ADDRESS,
-        payload,
-        payload_len,
-        GT911_I2C_TIMEOUT_TICKS);
+    const esp_err_t err = gt911_retry_write_to_device(payload, payload_len);
 
     heap_caps_free(payload);
     return err;
@@ -113,14 +159,7 @@ static esp_err_t gt911_write(uint16_t reg, const uint8_t *data, size_t length)
 static esp_err_t gt911_read(uint16_t reg, uint8_t *data, size_t length)
 {
     uint8_t reg_buf[2] = {reg & 0xFF, (reg >> 8) & 0xFF};
-    return i2c_master_write_read_device(
-        gt911_i2c_port(),
-        GT911_I2C_ADDRESS,
-        reg_buf,
-        sizeof(reg_buf),
-        data,
-        length,
-        GT911_I2C_TIMEOUT_TICKS);
+    return gt911_retry_write_read(reg_buf, sizeof(reg_buf), data, length);
 }
 
 static void gt911_clear_status(void)
@@ -168,13 +207,13 @@ static bool gt911_read_primary_point(gt911_point_t *point)
     return true;
 }
 
-static void gt911_hw_reset(void)
+static esp_err_t gt911_hw_reset(void)
 {
     esp_err_t err = ch422g_set_touch_reset(true);
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "Unable to drive GT911 reset via IO extension (%s)", esp_err_to_name(err));
-        return;
+        return err;
     }
 
     vTaskDelay(pdMS_TO_TICKS(15));
@@ -182,10 +221,21 @@ static void gt911_hw_reset(void)
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "Failed to release GT911 reset (%s)", esp_err_to_name(err));
-        return;
+        return err;
     }
 
     vTaskDelay(pdMS_TO_TICKS(60));
+    return ESP_OK;
+}
+
+static esp_err_t gt911_software_reset(void)
+{
+    const esp_err_t err = gt911_write_u8(GT911_REG_COMMAND, 0x02);
+    if (err == ESP_OK)
+    {
+        vTaskDelay(pdMS_TO_TICKS(60));
+    }
+    return err;
 }
 
 static void gt911_configure_int_pin(void)
@@ -215,8 +265,26 @@ static void gt911_log_identity(void)
 {
     uint8_t product_id[4] = {0};
     uint8_t vendor = 0;
-    if (gt911_read(GT911_REG_PRODUCT_ID, product_id, sizeof(product_id)) == ESP_OK &&
-        gt911_read(GT911_REG_VENDOR_ID, &vendor, sizeof(vendor)) == ESP_OK)
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 1; attempt <= GT911_I2C_RETRIES; ++attempt)
+    {
+        const esp_err_t id_err = gt911_read(GT911_REG_PRODUCT_ID, product_id, sizeof(product_id));
+        const esp_err_t vendor_err = gt911_read(GT911_REG_VENDOR_ID, &vendor, sizeof(vendor));
+        err = (id_err == ESP_OK && vendor_err == ESP_OK) ? ESP_OK : ESP_FAIL;
+        if (err == ESP_OK)
+        {
+            break;
+        }
+
+        ESP_LOGW(TAG, "GT911 ID read attempt %d/%d failed (id=%s vendor=%s)",
+                 attempt,
+                 GT911_I2C_RETRIES,
+                 esp_err_to_name(id_err),
+                 esp_err_to_name(vendor_err));
+        vTaskDelay(pdMS_TO_TICKS(GT911_I2C_RETRY_DELAY_MS));
+    }
+
+    if (err == ESP_OK)
     {
         char id_str[5] = {0};
         memcpy(id_str, product_id, sizeof(product_id));
@@ -224,7 +292,7 @@ static void gt911_log_identity(void)
     }
     else
     {
-        ESP_LOGW(TAG, "Unable to read GT911 product ID");
+        ESP_LOGW(TAG, "Unable to read GT911 product ID after %d attempts", GT911_I2C_RETRIES);
     }
 }
 
@@ -255,6 +323,10 @@ static void gt911_lvgl_read(lv_indev_t *indev, lv_indev_data_t *data)
         {
             y = (uint16_t)(GT911_RESOLUTION_Y - 1U - y);
         }
+
+#if GT911_LOG_TOUCH_EVENTS
+        ESP_LOGI(TAG, "Touch x=%u y=%u size=%u", x, y, point.size);
+#endif
 
         data->point.x = x;
         data->point.y = y;
@@ -349,13 +421,29 @@ void gt911_init(void)
         return;
     }
 
-    gt911_hw_reset();
+    const esp_err_t reset_err = gt911_hw_reset();
+    if (reset_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Hardware reset via CH422G failed (%s); attempting GT911 software reset", esp_err_to_name(reset_err));
+        const esp_err_t sw_reset_err = gt911_software_reset();
+        if (sw_reset_err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "GT911 software reset also failed (%s)", esp_err_to_name(sw_reset_err));
+        }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));
     gt911_configure_int_pin();
     gt911_log_identity();
 
     if (gt911_update_config() != ESP_OK)
     {
-        ESP_LOGW(TAG, "GT911 configuration update failed; continuing with defaults");
+        ESP_LOGW(TAG, "GT911 configuration update failed; continuing with defaults (%ux%u swap=%d flipX=%d flipY=%d)",
+                 GT911_RESOLUTION_X,
+                 GT911_RESOLUTION_Y,
+                 GT911_SWAP_AXES,
+                 GT911_INVERT_X,
+                 GT911_INVERT_Y);
     }
 
     s_indev = lv_indev_create();

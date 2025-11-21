@@ -3,10 +3,14 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "i2c_bus_shared.h"
 
 #define CH422G_I2C_TIMEOUT_TICKS   i2c_bus_shared_timeout_ticks()
+
+#define CH422G_I2C_RETRIES         3
+#define CH422G_I2C_RETRY_DELAY_MS  3
 
 #define IOEXT_I2C_ADDRESS          0x24         // CH32V003 (Waveshare IO extension)
 
@@ -34,16 +38,29 @@ static esp_err_t ch422g_write_outputs(void)
     }
 
     const uint8_t payload = s_ctx.outputs;
-    const esp_err_t err = i2c_master_write_to_device(
-        i2c_bus_shared_port(),
-        IOEXT_I2C_ADDRESS,
-        &payload,
-        sizeof(payload),
-        CH422G_I2C_TIMEOUT_TICKS);
+    esp_err_t err = ESP_FAIL;
+
+    for (int attempt = 1; attempt <= CH422G_I2C_RETRIES; ++attempt)
+    {
+        err = i2c_master_write_to_device(
+            i2c_bus_shared_port(),
+            IOEXT_I2C_ADDRESS,
+            &payload,
+            sizeof(payload),
+            CH422G_I2C_TIMEOUT_TICKS);
+
+        if (err == ESP_OK)
+        {
+            break;
+        }
+
+        ESP_LOGW(TAG, "CH422G write attempt %d/%d failed: %s", attempt, CH422G_I2C_RETRIES, esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(CH422G_I2C_RETRY_DELAY_MS));
+    }
 
     if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "IO extension write failed (%s)", esp_err_to_name(err));
+        ESP_LOGW(TAG, "IO extension write failed after %d attempts (%s)", CH422G_I2C_RETRIES, esp_err_to_name(err));
     }
 
     return err;

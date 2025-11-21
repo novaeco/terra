@@ -13,16 +13,16 @@
 #include "ch422g.h"
 
 #ifndef CONFIG_SDCARD_SPI_MOSI_GPIO
-#define CONFIG_SDCARD_SPI_MOSI_GPIO  GPIO_NUM_11  // TODO: vérifier les broches MOSI depuis le schéma Waveshare
+#define CONFIG_SDCARD_SPI_MOSI_GPIO  GPIO_NUM_11  // Fallback wiring if IO extension unavailable
 #endif
 #ifndef CONFIG_SDCARD_SPI_MISO_GPIO
-#define CONFIG_SDCARD_SPI_MISO_GPIO  GPIO_NUM_13  // TODO: vérifier les broches MISO depuis le schéma Waveshare
+#define CONFIG_SDCARD_SPI_MISO_GPIO  GPIO_NUM_13  // Fallback wiring if IO extension unavailable
 #endif
 #ifndef CONFIG_SDCARD_SPI_SCK_GPIO
-#define CONFIG_SDCARD_SPI_SCK_GPIO   GPIO_NUM_12  // TODO: vérifier les broches CLK depuis le schéma Waveshare
+#define CONFIG_SDCARD_SPI_SCK_GPIO   GPIO_NUM_12  // Fallback wiring if IO extension unavailable
 #endif
 #ifndef CONFIG_SDCARD_SPI_CS_GPIO
-#define CONFIG_SDCARD_SPI_CS_GPIO    GPIO_NUM_10  // TODO: si le CS est via CH422G, remplacer par un callback dédié
+#define CONFIG_SDCARD_SPI_CS_GPIO    GPIO_NUM_10  // Fallback wiring if IO extension unavailable
 #endif
 
 #define SDCARD_MOUNT_POINT "/sdcard"
@@ -38,6 +38,8 @@ static void sdcard_pre_trans_cb(sdspi_dev_handle_t handle, const sdspi_cmd_t *cm
     (void)handle;
     (void)cmd;
     (void)t;
+    // SD_CS is routed through EXIO4 on the CH422G per Waveshare schematic.
+    // Assert the CS line via the IO extension just before each SDSPI segment.
     ch422g_set_sdcard_cs(true);
 }
 
@@ -117,7 +119,9 @@ static esp_err_t sdcard_mount(void)
         slot_config.gpio_cs = -1;
         slot_config.command_transfer.pre_trans_cb = sdcard_pre_trans_cb;
         slot_config.command_transfer.post_trans_cb = sdcard_post_trans_cb;
-        ESP_LOGI(TAG, "Using IO extension for SD chip-select");
+        slot_config.data_transfer.pre_trans_cb = sdcard_pre_trans_cb;
+        slot_config.data_transfer.post_trans_cb = sdcard_post_trans_cb;
+        ESP_LOGI(TAG, "Using IO extension for SD chip-select via EXIO4");
     }
     else
     {

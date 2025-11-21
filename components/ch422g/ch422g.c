@@ -55,7 +55,8 @@ static esp_err_t ch422g_write_outputs(void)
 
     if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "IO extension write failed after %d attempts (%s)", CH422G_I2C_RETRIES, esp_err_to_name(err));
+        ESP_LOGW(TAG, "IO extension write failed after %d attempts (%s); disabling IO expander access", CH422G_I2C_RETRIES, esp_err_to_name(err));
+        s_ctx.io_ready = false;
     }
 
     return err;
@@ -94,7 +95,7 @@ esp_err_t ch422g_init(void)
 
     ESP_RETURN_ON_ERROR(i2c_bus_shared_init(), TAG, "Failed to init shared I2C bus");
 
-    ESP_RETURN_ON_ERROR(i2c_bus_shared_add_device(IOEXT_I2C_ADDRESS, 100000, &s_ctx.dev), TAG, "Failed to add CH422G to shared bus");
+    ESP_RETURN_ON_ERROR(i2c_bus_shared_add_device(IOEXT_I2C_ADDRESS, i2c_bus_shared_default_speed_hz(), &s_ctx.dev), TAG, "Failed to add CH422G to shared bus");
     s_ctx.io_ready = true;
 
     // Initialize outputs to a safe default (all released/disabled)

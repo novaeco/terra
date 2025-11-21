@@ -93,8 +93,12 @@ void rgb_lcd_init(void)
     s_buf2 = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_32BIT);
     if ((s_buf1 == NULL) || (s_buf2 == NULL))
     {
-        ESP_LOGE(TAG, "LVGL draw buffer allocation failed");
-        abort();
+        ESP_LOGE(TAG, "LVGL draw buffer allocation failed; skipping RGB LCD init");
+        heap_caps_free(s_buf1);
+        heap_caps_free(s_buf2);
+        s_buf1 = NULL;
+        s_buf2 = NULL;
+        return;
     }
 
     esp_lcd_rgb_timing_t timing = {
@@ -139,9 +143,26 @@ void rgb_lcd_init(void)
         },
     };
 
-    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel_handle));
+    esp_err_t err = esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to create RGB panel: %s", esp_err_to_name(err));
+        return;
+    }
+
+    err = esp_lcd_panel_reset(s_panel_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "RGB panel reset failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    err = esp_lcd_panel_init(s_panel_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "RGB panel init failed: %s", esp_err_to_name(err));
+        return;
+    }
 
     rgb_lcd_init_backlight();
 

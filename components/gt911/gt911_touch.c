@@ -273,7 +273,11 @@ static void gt911_configure_int_pin(void)
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
-    ESP_ERROR_CHECK(gpio_config(&cfg));
+    const esp_err_t err = gpio_config(&cfg);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to configure GT911 INT pin (%s) -- continuing without IRQ bias", esp_err_to_name(err));
+    }
 }
 
 static bool gt911_poll(gt911_point_t *point)

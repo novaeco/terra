@@ -25,6 +25,12 @@
 static const char *TAG = "MAIN";
 
 // Guard against re-enabling LVGL's custom tick: we drive lv_tick_inc() via esp_timer.
+// LVGL 9.x no longer defines LV_TICK_CUSTOM by default, but the ESP-IDF Kconfig (and
+// legacy 8.x configs) may expose CONFIG_LV_TICK_CUSTOM/LV_TICK_CUSTOM. Check both to
+// catch any configuration that would try to override the esp_timer-driven tick.
+#if defined(CONFIG_LV_TICK_CUSTOM)
+_Static_assert(CONFIG_LV_TICK_CUSTOM == 0, "CONFIG_LV_TICK_CUSTOM must remain disabled when using esp_timer-driven lv_tick_inc()");
+#elif defined(LV_TICK_CUSTOM)
 #if defined(LV_USE_CUSTOM_TICK)
 _Static_assert(LV_USE_CUSTOM_TICK == 0, "LV_USE_CUSTOM_TICK must remain disabled when using esp_timer-driven lv_tick_inc()");
 #elif defined(CONFIG_LV_USE_CUSTOM_TICK)

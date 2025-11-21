@@ -18,8 +18,6 @@
 #define GT911_I2C_TIMEOUT_MS           i2c_bus_shared_timeout_ms()
 #define GT911_I2C_RETRIES              3
 #define GT911_I2C_RETRY_DELAY_MS       3
-#define GT911_I2C_SPEED_HZ             100000
-
 #define GT911_REG_COMMAND              0x8040
 #define GT911_REG_CONFIG               0x8047
 #define GT911_REG_CONFIG_CHECKSUM      0x80FF
@@ -130,7 +128,8 @@ static esp_err_t gt911_bus_init(void)
 
     if (s_dev == NULL)
     {
-        ESP_RETURN_ON_ERROR(i2c_bus_shared_add_device(GT911_I2C_ADDRESS, GT911_I2C_SPEED_HZ, &s_dev), TAG, "Failed to add GT911 to shared bus");
+        const uint32_t scl_speed = i2c_bus_shared_default_speed_hz();
+        ESP_RETURN_ON_ERROR(i2c_bus_shared_add_device(GT911_I2C_ADDRESS, scl_speed, &s_dev), TAG, "Failed to add GT911 to shared bus");
     }
 
     if (!ch422g_is_available())

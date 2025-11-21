@@ -11,13 +11,14 @@
 #include "freertos/task.h"
 #include "ch422g.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "i2c_bus_shared.h"
 
 #define GT911_I2C_ADDRESS              0x5D
-#define GT911_I2C_TIMEOUT_TICKS        i2c_bus_shared_timeout_ticks()
+#define GT911_I2C_TIMEOUT_MS           i2c_bus_shared_timeout_ms()
 #define GT911_I2C_RETRIES              3
 #define GT911_I2C_RETRY_DELAY_MS       3
+#define GT911_I2C_SPEED_HZ             100000
 
 #define GT911_REG_COMMAND              0x8040
 #define GT911_REG_CONFIG               0x8047
@@ -61,21 +62,24 @@ typedef struct
 static lv_indev_t *s_indev = NULL;
 static gt911_point_t s_last_point;
 static bool s_initialized = false;
-
-static inline i2c_port_t gt911_i2c_port(void);
+static i2c_master_dev_handle_t s_dev = NULL;
 
 static esp_err_t gt911_retry_write_to_device(const uint8_t *payload, size_t length)
 {
+    if (s_dev == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     esp_err_t err = ESP_FAIL;
 
     for (int attempt = 1; attempt <= GT911_I2C_RETRIES; ++attempt)
     {
-        err = i2c_master_write_to_device(
-            gt911_i2c_port(),
-            GT911_I2C_ADDRESS,
+        err = i2c_master_transmit(
+            s_dev,
             payload,
             length,
-            GT911_I2C_TIMEOUT_TICKS);
+            GT911_I2C_TIMEOUT_MS);
 
         if (err == ESP_OK)
         {
@@ -91,18 +95,22 @@ static esp_err_t gt911_retry_write_to_device(const uint8_t *payload, size_t leng
 
 static esp_err_t gt911_retry_write_read(const uint8_t *write_buf, size_t write_len, uint8_t *read_buf, size_t read_len)
 {
+    if (s_dev == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     esp_err_t err = ESP_FAIL;
 
     for (int attempt = 1; attempt <= GT911_I2C_RETRIES; ++attempt)
     {
-        err = i2c_master_write_read_device(
-            gt911_i2c_port(),
-            GT911_I2C_ADDRESS,
+        err = i2c_master_transmit_receive(
+            s_dev,
             write_buf,
             write_len,
             read_buf,
             read_len,
-            GT911_I2C_TIMEOUT_TICKS);
+            GT911_I2C_TIMEOUT_MS);
 
         if (err == ESP_OK)
         {
@@ -116,14 +124,14 @@ static esp_err_t gt911_retry_write_read(const uint8_t *write_buf, size_t write_l
     return err;
 }
 
-static inline i2c_port_t gt911_i2c_port(void)
-{
-    return i2c_bus_shared_port();
-}
-
 static esp_err_t gt911_bus_init(void)
 {
     ESP_RETURN_ON_ERROR(i2c_bus_shared_init(), TAG, "Shared I2C init failed");
+
+    if (s_dev == NULL)
+    {
+        ESP_RETURN_ON_ERROR(i2c_bus_shared_add_device(GT911_I2C_ADDRESS, GT911_I2C_SPEED_HZ, &s_dev), TAG, "Failed to add GT911 to shared bus");
+    }
 
     if (!ch422g_is_available())
     {

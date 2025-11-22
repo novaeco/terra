@@ -25,11 +25,16 @@
 
 /*
  * Touch reboot loop post-mortem:
- * A software reset (esp_restart_noos) was consistently triggered right after
- * "GT911 ready" when LVGL/touch initialization hit an assert or error path
- * (e.g., display handle missing, double LVGL tick source). The touch stack is
- * now hardened to fail gracefully instead of restarting, and can be disabled
- * at compile time via GT911_ENABLE for quick bisecting.
+ * - Root cause observed: ui_manager_init() could run while the default LVGL
+ *   display handle was missing or invalid, triggering an LVGL assert that
+ *   bubbled up as esp_restart_noos (rst:0xc / panic reason 4) immediately
+ *   after "After GT911 init, proceeding with peripherals".
+ * - Fixes applied: guard UI creation behind a display check, replace hard
+ *   failure paths with degraded-mode logging, and instrument each peripheral
+ *   init step so the last executed block is visible in logs.
+ * - Expected behavior: if touch or display are unavailable, the system stays
+ *   alive in degraded mode (UI visible when display is present; no reset on
+ *   non-critical errors) instead of rebooting.
  */
 
 #ifndef GT911_ENABLE
@@ -124,6 +129,12 @@ static void lvgl_tick_cb(void *arg)
 {
     (void)arg;
     lv_tick_inc(1);
+}
+
+static inline void log_non_fatal_error(const char *what, esp_err_t err)
+{
+    ESP_LOGE(TAG, "%s failed: %s (non-fatal, degraded mode)", what, esp_err_to_name(err));
+    logs_panel_add_log("%s: échec (%s)", what, esp_err_to_name(err));
 }
 
 void app_main(void)
@@ -227,21 +238,30 @@ void app_main(void)
 #endif
     ESP_LOGI(TAG, "After GT911 init, proceeding with peripherals");
 
+    ESP_LOGI(TAG, "Init peripherals step 1: can_bus_init()");
+
     esp_err_t can_err = can_bus_init();
     if (can_err != ESP_OK)
     {
-        ESP_LOGW(TAG, "CAN init failed: %s", esp_err_to_name(can_err));
+        log_non_fatal_error("CAN init", can_err);
+        degraded_mode = true;
+        ui_manager_set_degraded(true);
     }
 
+    ESP_LOGI(TAG, "Init peripherals step 2: rs485_init()");
     esp_err_t rs485_err = rs485_init();
     if (rs485_err != ESP_OK)
     {
-        ESP_LOGW(TAG, "RS485 init failed: %s", esp_err_to_name(rs485_err));
+        log_non_fatal_error("RS485 init", rs485_err);
+        degraded_mode = true;
+        ui_manager_set_degraded(true);
     }
 
+    ESP_LOGI(TAG, "Init peripherals step 3: cs8501_init()");
     cs8501_init();
     ESP_LOGI(TAG, "Battery voltage: %.2f V, charging: %s", cs8501_get_battery_voltage(), cs8501_is_charging() ? "yes" : "no");
 
+    ESP_LOGI(TAG, "Init peripherals step 4: sdcard_init()");
     esp_err_t sd_err = sdcard_init();
     if (sd_err == ESP_OK)
     {
@@ -257,6 +277,7 @@ void app_main(void)
         ESP_LOGW(TAG, "microSD initialization failed (%s)", esp_err_to_name(sd_err));
     }
 
+    ESP_LOGI(TAG, "Init peripherals step 5: LVGL tick source");
 #if LV_TICK_CUSTOM
     /*
      * Prevent the historical double-tick panic that used to occur right after
@@ -292,8 +313,18 @@ void app_main(void)
     }
 #endif
 
-    ui_manager_init();
-    ui_manager_set_degraded(degraded_mode);
+    ESP_LOGI(TAG, "Init peripherals step 6: ui_manager_init()");
+    esp_err_t ui_err = ui_manager_init();
+    if (ui_err != ESP_OK)
+    {
+        log_non_fatal_error("UI manager init", ui_err);
+        degraded_mode = true;
+        ui_manager_set_degraded(true);
+    }
+    else
+    {
+        ui_manager_set_degraded(degraded_mode);
+    }
 
     while (true)
     {

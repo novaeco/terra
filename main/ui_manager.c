@@ -13,6 +13,47 @@ static const char *TAG = "ui_manager";
 static lv_obj_t *dashboard_screen = NULL;
 static lv_obj_t *system_screen = NULL;
 static lv_obj_t *logs_screen = NULL;
+static lv_obj_t *active_nav_button = NULL;
+static lv_obj_t *dashboard_nav_button = NULL;
+static lv_obj_t *system_nav_button = NULL;
+static lv_obj_t *logs_nav_button = NULL;
+
+static lv_obj_t *get_nav_button_for_screen(lv_obj_t *screen)
+{
+    if (screen == dashboard_screen)
+    {
+        return dashboard_nav_button;
+    }
+    if (screen == system_screen)
+    {
+        return system_nav_button;
+    }
+    if (screen == logs_screen)
+    {
+        return logs_nav_button;
+    }
+    return NULL;
+}
+
+static void set_active_nav_button(lv_obj_t *btn)
+{
+    if (active_nav_button == btn)
+    {
+        return;
+    }
+
+    if (active_nav_button)
+    {
+        lv_obj_clear_state(active_nav_button, LV_STATE_CHECKED);
+    }
+
+    active_nav_button = btn;
+
+    if (active_nav_button)
+    {
+        lv_obj_add_state(active_nav_button, LV_STATE_CHECKED);
+    }
+}
 
 static void nav_button_event_cb(lv_event_t *e)
 {
@@ -24,6 +65,7 @@ static void nav_button_event_cb(lv_event_t *e)
     if (target)
     {
         lv_scr_load_anim(target, LV_SCR_LOAD_ANIM_FADE_IN, 250, 0, false);
+        set_active_nav_button(get_nav_button_for_screen(target));
     }
 }
 
@@ -61,6 +103,7 @@ static void create_navbar(lv_obj_t *screen)
         lv_obj_t *btn = lv_btn_create(bar);
         lv_obj_remove_style_all(btn);
         lv_obj_add_style(btn, lv_theme_custom_style_button(), LV_PART_MAIN);
+        lv_obj_add_style(btn, lv_theme_custom_style_button_active(), LV_PART_MAIN | LV_STATE_CHECKED);
         lv_obj_set_flex_grow(btn, 1);
         lv_obj_add_event_cb(btn, nav_button_event_cb, LV_EVENT_CLICKED, buttons[i].target);
 
@@ -68,6 +111,19 @@ static void create_navbar(lv_obj_t *screen)
         lv_obj_add_style(label, lv_theme_custom_style_label(), LV_PART_MAIN);
         lv_label_set_text(label, buttons[i].label);
         lv_obj_center(label);
+
+        if (buttons[i].target == dashboard_screen && screen == dashboard_screen)
+        {
+            dashboard_nav_button = btn;
+        }
+        else if (buttons[i].target == system_screen && screen == system_screen)
+        {
+            system_nav_button = btn;
+        }
+        else if (buttons[i].target == logs_screen && screen == logs_screen)
+        {
+            logs_nav_button = btn;
+        }
     }
 }
 
@@ -82,6 +138,8 @@ void ui_manager_init(void)
     create_navbar(dashboard_screen);
     create_navbar(system_screen);
     create_navbar(logs_screen);
+
+    set_active_nav_button(dashboard_nav_button);
 
     lv_scr_load(dashboard_screen);
 

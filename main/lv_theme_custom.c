@@ -6,6 +6,7 @@ static lv_style_t style_screen;
 static lv_style_t style_card;
 static lv_style_t style_label;
 static lv_style_t style_button;
+static lv_style_t style_button_active;
 static bool theme_ready = false;
 
 static void init_styles(void)
@@ -35,6 +36,14 @@ static void init_styles(void)
     lv_style_set_pad_right(&style_button, 8);
     lv_style_set_pad_top(&style_button, 4);
     lv_style_set_pad_bottom(&style_button, 4);
+
+    lv_style_init(&style_button_active);
+    lv_style_set_bg_color(&style_button_active, lv_color_hex(0x4EA1FF));
+    lv_style_set_bg_opa(&style_button_active, LV_OPA_COVER);
+    lv_style_set_border_width(&style_button_active, 2);
+    lv_style_set_border_color(&style_button_active, lv_color_hex(0x82C7FF));
+    lv_style_set_shadow_width(&style_button_active, 10);
+    lv_style_set_shadow_color(&style_button_active, lv_color_hex(0x4EA1FF));
 }
 
 void lv_theme_custom_init(void)
@@ -82,4 +91,9 @@ const lv_style_t *lv_theme_custom_style_label(void)
 const lv_style_t *lv_theme_custom_style_button(void)
 {
     return ensure_style_ready(&style_button);
+}
+
+const lv_style_t *lv_theme_custom_style_button_active(void)
+{
+    return ensure_style_ready(&style_button_active);
 }

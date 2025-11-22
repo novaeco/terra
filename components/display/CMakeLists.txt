@@ -5,4 +5,3 @@ idf_component_register(
     PRIV_REQUIRES esp_psram heap
     PRIV_REQUIRES esp_psram
 )
-https://github.com/novaeco/UIperso

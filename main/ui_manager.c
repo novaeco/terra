@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 
+#include "esp_err.h"
 #include "esp_log.h"
 #include "lvgl.h"
 
@@ -9,6 +10,15 @@
 #include "logs_panel.h"
 #include "lv_theme_custom.h"
 #include "system_panel.h"
+
+/*
+ * UI init stability notes:
+ * - Previously, calling ui_manager_init() without a valid default LVGL display
+ *   could trigger an LVGL assert, which the runtime escalated into
+ *   esp_restart_noos (panic reset). We now validate the display upfront and
+ *   propagate a non-fatal error so the system can stay alive in degraded mode
+ *   when the panel or touch are missing.
+ */
 
 static const char *TAG = "ui_manager";
 
@@ -230,13 +240,25 @@ void ui_manager_set_degraded(bool degraded)
     }
 }
 
-void ui_manager_init(void)
+esp_err_t ui_manager_init(void)
 {
+    if (lv_disp_get_default() == NULL)
+    {
+        ESP_LOGE(TAG, "Default LVGL display missing; UI init aborted (degraded mode)");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     lv_theme_custom_init();
 
     dashboard_screen = dashboard_create();
     system_screen = system_panel_create();
     logs_screen = logs_panel_create();
+
+    if (!dashboard_screen || !system_screen || !logs_screen)
+    {
+        ESP_LOGE(TAG, "Failed to create one or more screens (dashboard/system/logs)");
+        return ESP_ERR_NO_MEM;
+    }
 
     create_navbar(dashboard_screen);
     create_navbar(system_screen);
@@ -255,4 +277,6 @@ void ui_manager_init(void)
 
     logs_panel_add_log("UI initialisée");
     ESP_LOGI(TAG, "Interface LVGL prête");
+
+    return ESP_OK;
 }

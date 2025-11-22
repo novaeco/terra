@@ -11,6 +11,7 @@ const lv_style_t *lv_theme_custom_style_screen(void);
 const lv_style_t *lv_theme_custom_style_card(void);
 const lv_style_t *lv_theme_custom_style_label(void);
 const lv_style_t *lv_theme_custom_style_button(void);
+const lv_style_t *lv_theme_custom_style_button_active(void);
 
 #ifdef __cplusplus
 }

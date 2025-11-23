@@ -36,18 +36,6 @@
 #include "ch422g.h"
 #include "sdspi_ch422g.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Explicit declaration to avoid implicit declaration warnings on ESP-IDF 6.x builds.
-void esp_log_buffer_hex(const char *tag, const void *buffer, uint16_t buff_len);
-
-#ifdef __cplusplus
-}
-#endif
-
-
 // Compatibilité API ESP-IDF 6.x : sdspi_slot_config_t a été supprimé,
 // on le redéfinit localement pour ce driver custom.
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
@@ -783,7 +771,7 @@ static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cm
             crc_of_data = sdspi_crc16(data, will_receive + extra_data_size);
             if (crc_of_data != crc) {
                 ESP_LOGE(TAG, "data CRC failed, got=0x%04x expected=0x%04x", crc_of_data, crc);
-                esp_log_buffer_hex(TAG, data, 16);
+                ESP_LOG_BUFFER_HEX(TAG, data, 16);
                 return ESP_ERR_INVALID_CRC;
             }
         }

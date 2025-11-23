@@ -91,6 +91,13 @@ static esp_err_t sdcard_mount(void)
 
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
 
+    // Explicitly set the Waveshare 7B wiring so the SDSPI layer matches the bus
+    // (MOSI=GPIO11, MISO=GPIO13, SCK=GPIO12). Chip-select is kept on the IO
+    // expander, so the driver must not try to toggle a GPIO CS line.
+    slot_config.gpio_miso = CONFIG_SDCARD_SPI_MISO_GPIO;
+    slot_config.gpio_mosi = CONFIG_SDCARD_SPI_MOSI_GPIO;
+    slot_config.gpio_sck = CONFIG_SDCARD_SPI_SCK_GPIO;
+
     // CS is routed through CH422G EXIO4. Keep it permanently asserted (active low)
     // so the dedicated SPI device remains selected; the SDSPI driver will not
     // toggle CS because gpio_cs is disabled below.

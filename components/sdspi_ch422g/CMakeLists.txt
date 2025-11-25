@@ -8,6 +8,7 @@ idf_component_register(
         sdmmc
         esp_driver_spi
         esp_driver_sdmmc
+        log
         ch422g
         bus
     PRIV_REQUIRES

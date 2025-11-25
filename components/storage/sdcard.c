@@ -48,6 +48,28 @@ static const char *TAG = "SDCARD";
 static bool s_mounted = false;
 static sdmmc_card_t *s_card = NULL;
 
+static void sdcard_cleanup(bool bus_initialized_here)
+{
+    // Release CS and ensure any SDSPI device handles are detached before freeing the bus.
+    (void)ch422g_set_sdcard_cs(false);
+
+    esp_err_t deinit_err = sdspi_host_ch422g_deinit();
+    if (deinit_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "sdspi_host_ch422g_deinit returned %s", esp_err_to_name(deinit_err));
+    }
+
+    esp_err_t bus_free_err = spi_bus_free(CONFIG_SDCARD_SPI_HOST);
+    if (bus_free_err == ESP_ERR_INVALID_STATE && !bus_initialized_here)
+    {
+        ESP_LOGD(TAG, "SPI bus %d not owned here; leave as-is", CONFIG_SDCARD_SPI_HOST);
+    }
+    else if (bus_free_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "spi_bus_free(%d) returned %s", CONFIG_SDCARD_SPI_HOST, esp_err_to_name(bus_free_err));
+    }
+}
+
 static bool sdcard_no_media_error(esp_err_t err)
 {
     return (err == ESP_ERR_NOT_FOUND);
@@ -138,16 +160,7 @@ static esp_err_t sdcard_mount(void)
             ESP_LOGE(TAG, "Failed to mount %s (%s)", SDCARD_MOUNT_POINT, esp_err_to_name(err));
         }
 
-        // Ensure CS released and the SDSPI device/bus are cleaned up to avoid leftover CS handles.
-        (void)ch422g_set_sdcard_cs(false);
-        (void)sdspi_host_ch422g_deinit();
-
-        esp_err_t bus_free_err = spi_bus_free(CONFIG_SDCARD_SPI_HOST);
-        if (bus_free_err == ESP_ERR_INVALID_STATE && !bus_initialized_here) {
-            ESP_LOGD(TAG, "SPI bus %d not owned here; leave as-is", CONFIG_SDCARD_SPI_HOST);
-        } else if (bus_free_err != ESP_OK) {
-            ESP_LOGW(TAG, "spi_bus_free(%d) returned %s", CONFIG_SDCARD_SPI_HOST, esp_err_to_name(bus_free_err));
-        }
+        sdcard_cleanup(bus_initialized_here);
         return err;
     }
 

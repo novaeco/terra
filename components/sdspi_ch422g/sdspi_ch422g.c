@@ -281,7 +281,11 @@ static esp_err_t go_idle_clockout(slot_info_t *slot)
 static esp_err_t configure_spi_dev(slot_info_t *slot, int clock_speed_hz)
 {
     if (slot->spi_handle) {
-        spi_bus_remove_device(slot->spi_handle);
+        esp_err_t rem_ret = spi_bus_remove_device(slot->spi_handle);
+        if (rem_ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to remove SPI device before reconfig (%s)", esp_err_to_name(rem_ret));
+            return rem_ret;
+        }
         slot->spi_handle = NULL;
     }
     spi_device_interface_config_t devcfg = {
@@ -353,8 +357,12 @@ static esp_err_t ensure_slot_initialized(int host_id, slot_info_t **out_slot)
 static esp_err_t deinit_slot(slot_info_t *slot)
 {
     if (slot->spi_handle) {
-        spi_bus_remove_device(slot->spi_handle);
-        slot->spi_handle = NULL;
+        esp_err_t rem_ret = spi_bus_remove_device(slot->spi_handle);
+        if (rem_ret != ESP_OK) {
+            ESP_LOGW(TAG, "spi_bus_remove_device failed during deinit (%s)", esp_err_to_name(rem_ret));
+        } else {
+            slot->spi_handle = NULL;
+        }
     }
 
     free(slot->block_buf);

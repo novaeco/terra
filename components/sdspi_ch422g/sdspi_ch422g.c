@@ -5,10 +5,9 @@
  */
 
 // Custom SDSPI host driver adapted for Waveshare ESP32-S3-Touch-LCD-7B.
-// The microSD chip-select is routed to CH422G EXIO4 (I²C-controlled), not a native
-// ESP32-S3 GPIO. CS handling is fully managed here (dummy clocks with CS high,
-// assert/deassert around each transaction) while keeping compatibility with
-// esp_vfs_fat_sdspi_mount.
+// The microSD chip-select is routed to CH422G EXIO4 (I²C-controlled), not a native ESP32-S3 GPIO.
+// CS handling is fully managed here (idle clocks with CS high, assert/deassert around each command)
+// while keeping compatibility with esp_vfs_fat_sdspi_mount.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,27 +16,32 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/param.h>
+
 #include "esp_log.h"
 #include "esp_log_buffer.h"
 #include "esp_idf_version.h"
 #include "esp_heap_caps.h"
 #include "sys/lock.h"
+
 #include "driver/gpio.h"
 #include "driver/spi_common.h"
 #include "driver/sdmmc_defs.h"
 #include "driver/sdspi_host.h"
+
 #include "sdspi_private.h"
 #include "sdspi_crc.h"
 #include "esp_timer.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+
 #include "soc/soc_memory_layout.h"
 
 #include "ch422g.h"
 #include "sdspi_ch422g.h"
 
-// Compatibilité API ESP-IDF 6.x : sdspi_slot_config_t a été supprimé,
-// on le redéfinit localement pour ce driver custom.
+// Compatibilité API ESP-IDF 5+ : sdspi_slot_config_t a été supprimé,
+// on le redéfinit localement pour ce driver custom (uniquement pour l'API deprecated init_slot()).
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 typedef struct {
     gpio_num_t gpio_cs;    // CS signal
@@ -51,38 +55,25 @@ typedef struct {
 } sdspi_slot_config_t;
 #endif
 
-
 /// Max number of transactions in flight (used in start_command_write_blocks)
 #define SDSPI_TRANSACTION_COUNT 4
 #define SDSPI_MOSI_IDLE_VAL     0xff    //!< Data value which causes MOSI to stay high
-#define GPIO_UNUSED 0xff                //!< Flag indicating that CD/WP is unused
+#define GPIO_UNUSED             0xff    //!< Flag indicating that CD/WP is unused
 /// Size of the buffer returned by get_block_buf
 #define SDSPI_BLOCK_BUF_SIZE    (SDSPI_MAX_DATA_LEN + 4)
 /// Maximum number of dummy bytes between the request and response (minimum is 1)
 #define SDSPI_RESPONSE_MAX_DELAY  8
 
-/**
- * @brief Structure containing run time configuration for a single SD slot
- *
- * The slot info is referenced to by an sdspi_dev_handle_t (alias int). The handle may be the raw
- * pointer to the slot info itself (force converted to, new API in IDFv4.2), or the index of the
- * s_slot array (deprecated API). Returning the raw pointer to the caller instead of storing it
- * locally can save some static memory.
- */
 typedef struct {
-    spi_host_device_t   host_id; //!< SPI host id.
-    spi_device_handle_t spi_handle; //!< SPI device handle, used for transactions
-    uint8_t gpio_cs;            //!< CS GPIO
-    uint8_t gpio_cd;            //!< Card detect GPIO, or GPIO_UNUSED
-    uint8_t gpio_wp;            //!< Write protect GPIO, or GPIO_UNUSED
-    uint8_t gpio_int;            //!< Write protect GPIO, or GPIO_UNUSED
-    /// Set to 1 if the higher layer has asked the card to enable CRC checks
-    uint8_t data_crc_enabled : 1;
-    /// Intermediate buffer used when application buffer is not in DMA memory;
-    /// allocated on demand, SDSPI_BLOCK_BUF_SIZE bytes long. May be zero.
-    uint8_t* block_buf;
-    /// semaphore of gpio interrupt
-    SemaphoreHandle_t   semphr_int;
+    spi_host_device_t    host_id;     //!< SPI host id.
+    spi_device_handle_t  spi_handle;  //!< SPI device handle, used for transactions
+    uint8_t gpio_cs;                 //!< Unused (CS is CH422G)
+    uint8_t gpio_cd;                 //!< Card detect GPIO, or GPIO_UNUSED
+    uint8_t gpio_wp;                 //!< Write protect GPIO, or GPIO_UNUSED
+    uint8_t gpio_int;                //!< SDIO interrupt GPIO, or GPIO_UNUSED
+    uint8_t data_crc_enabled : 1;    //!< CRC enabled by upper layer
+    uint8_t *block_buf;              //!< DMA intermediate buffer (lazy alloc)
+    SemaphoreHandle_t semphr_int;     //!< Unused (no SDIO IRQ line)
 } slot_info_t;
 
 // Reserved for old API to be back-compatible
@@ -90,7 +81,7 @@ static slot_info_t *s_slots[SOC_SPI_PERIPH_NUM] = {};
 static const char *TAG = "sdspi_ch422g";
 
 static const bool use_polling = true;
-static const bool no_use_polling = true;
+static const bool no_use_polling = false;
 static _lock_t s_lock;
 static bool s_app_cmd;
 
@@ -167,8 +158,6 @@ static void r1_sdio_response_to_err(uint8_t r1, int cmd, esp_err_t *out_err)
     }
 }
 
-
-/// Functions to send out different kinds of commands
 static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cmd,
         uint8_t *data, uint32_t rx_length, bool need_stop_command);
 
@@ -176,12 +165,8 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
         const uint8_t *data, uint32_t tx_length, bool multi_block, bool stop_trans);
 
 static esp_err_t start_command_default(slot_info_t *slot, int flags, sdspi_hw_cmd_t *cmd);
-
 static esp_err_t shift_cmd_response(sdspi_hw_cmd_t *cmd, int sent_bytes);
 
-/// A few helper functions
-
-/// Map handle to pointer of slot information
 static slot_info_t* get_slot_info(sdspi_dev_handle_t handle)
 {
     if ((uint32_t) handle < SOC_SPI_PERIPH_NUM) {
@@ -191,14 +176,8 @@ static slot_info_t* get_slot_info(sdspi_dev_handle_t handle)
     }
 }
 
-/// Store slot information (if possible) and return corresponding handle
 static sdspi_dev_handle_t store_slot_info(slot_info_t *slot)
 {
-    /*
-     * To be back-compatible, the first device of each bus will always be stored locally, and
-     * referenced to by the handle `host_id`, otherwise the new API return the raw pointer to the
-     * slot info as the handle, to save some static memory.
-     */
     if (s_slots[slot->host_id] == NULL) {
         s_slots[slot->host_id] = slot;
         return slot->host_id;
@@ -207,7 +186,6 @@ static sdspi_dev_handle_t store_slot_info(slot_info_t *slot)
     }
 }
 
-/// Get the slot info for a specific handle, and remove the local reference (if exist).
 static slot_info_t* remove_slot_info(sdspi_dev_handle_t handle)
 {
     if ((uint32_t) handle < SOC_SPI_PERIPH_NUM) {
@@ -233,22 +211,18 @@ static esp_err_t cs_low(slot_info_t *slot)
     return ch422g_set_sdcard_cs(true);
 }
 
-/// Return true if WP pin is configured and is low
 static bool card_write_protected(slot_info_t *slot)
 {
     (void)slot;
     return false;
 }
 
-/// Return true if CD pin is configured and is high
 static bool card_missing(slot_info_t *slot)
 {
     (void)slot;
     return false;
 }
 
-/// Get pointer to a block of DMA memory, allocate if necessary.
-/// This is used if the application provided buffer is not in DMA capable memory.
 static esp_err_t get_block_buf(slot_info_t *slot, uint8_t **out_buf)
 {
     if (slot->block_buf == NULL) {
@@ -261,8 +235,6 @@ static esp_err_t get_block_buf(slot_info_t *slot, uint8_t **out_buf)
     return ESP_OK;
 }
 
-/// Clock out one byte (CS has to be high) to make the card release MISO
-/// (clocking one bit would work as well, but that triggers a bug in SPI DMA)
 static void release_bus(slot_info_t *slot)
 {
     spi_transaction_t t = {
@@ -270,43 +242,31 @@ static void release_bus(slot_info_t *slot)
         .length = 8,
         .tx_data = {0xff}
     };
-    spi_device_polling_transmit(slot->spi_handle, &t);
-    // don't care if this failed
+    (void)spi_device_polling_transmit(slot->spi_handle, &t);
 }
 
-/// Clock out 80 cycles (10 bytes) before GO_IDLE command
 static void go_idle_clockout(slot_info_t *slot)
 {
-    //actually we need 10, declare 12 to meet requirement of RXDMA
     uint8_t data[12];
     memset(data, 0xff, sizeof(data));
     spi_transaction_t t = {
-        .length = 10*8,
+        .length = 10 * 8,
         .tx_buffer = data,
         .rx_buffer = data,
     };
-    spi_device_polling_transmit(slot->spi_handle, &t);
-    // don't care if this failed
+    (void)spi_device_polling_transmit(slot->spi_handle, &t);
 }
 
-/**
- * (Re)Configure SPI device. Used to change clock speed.
- * @param slot Pointer to the slot to be configured
- * @param clock_speed_hz  clock speed, Hz
- * @return ESP_OK on success
- */
 static esp_err_t configure_spi_dev(slot_info_t *slot, int clock_speed_hz)
 {
     if (slot->spi_handle) {
-        // Reinitializing
         spi_bus_remove_device(slot->spi_handle);
         slot->spi_handle = NULL;
     }
     spi_device_interface_config_t devcfg = {
         .clock_speed_hz = clock_speed_hz,
         .mode = 0,
-        // For SD cards, CS must stay low during the whole read/write operation,
-        // rather than a single SPI transaction.
+        // CS is controlled externally via CH422G (I2C), not by the SPI peripheral
         .spics_io_num = GPIO_NUM_NC,
         .queue_size = SDSPI_TRANSACTION_COUNT,
     };
@@ -320,40 +280,33 @@ esp_err_t sdspi_host_ch422g_init(void)
 
 static esp_err_t deinit_slot(slot_info_t *slot)
 {
-    esp_err_t err = ESP_OK;
     if (slot->spi_handle) {
         spi_bus_remove_device(slot->spi_handle);
         slot->spi_handle = NULL;
         free(slot->block_buf);
         slot->block_buf = NULL;
     }
-    cs_high(slot);
 
+    (void)cs_high(slot);
     free(slot);
-    return err;
+    return ESP_OK;
 }
 
 esp_err_t sdspi_host_ch422g_remove_device(sdspi_dev_handle_t handle)
 {
-    //Get the slot info and remove the reference in the static memory (if used)
     slot_info_t* slot = remove_slot_info(handle);
     if (slot == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-
-   deinit_slot(slot);
-    return ESP_OK;
+    return deinit_slot(slot);
 }
 
-//only the slots locally stored can be deinit in this function.
 esp_err_t sdspi_host_ch422g_deinit(void)
 {
     for (size_t i = 0; i < sizeof(s_slots)/sizeof(s_slots[0]); ++i) {
         slot_info_t* slot = remove_slot_info(i);
-        //slot isn't used, skip
         if (slot == NULL) continue;
-
-        deinit_slot(slot);
+        (void)deinit_slot(slot);
     }
     return ESP_OK;
 }
@@ -365,12 +318,13 @@ esp_err_t sdspi_host_ch422g_set_card_clk(sdspi_dev_handle_t handle, uint32_t fre
         return ESP_ERR_INVALID_ARG;
     }
     ESP_LOGD(TAG, "Setting card clock to %d kHz", freq_khz);
-    return configure_spi_dev(slot, freq_khz * 1000);
+    return configure_spi_dev(slot, (int)freq_khz * 1000);
 }
 
 esp_err_t sdspi_host_ch422g_init_device(const sdspi_device_config_t* slot_config, sdspi_dev_handle_t* out_handle)
 {
-    ESP_LOGI(TAG, "%s: SPI%d with CH422G-controlled CS (gpio_cs=%d)", __func__, slot_config->host_id + 1, slot_config->gpio_cs);
+    ESP_LOGI(TAG, "%s: SPI%d with CH422G-controlled CS (gpio_cs=%d)",
+             __func__, slot_config->host_id + 1, slot_config->gpio_cs);
 
     if (!ch422g_sdcard_cs_available()) {
         ESP_LOGE(TAG, "CH422G unavailable; cannot control SD CS");
@@ -381,6 +335,7 @@ esp_err_t sdspi_host_ch422g_init_device(const sdspi_device_config_t* slot_config
     if (slot == NULL) {
         return ESP_ERR_NO_MEM;
     }
+
     *slot = (slot_info_t) {
         .host_id = slot_config->host_id,
         .gpio_cs = GPIO_UNUSED,
@@ -388,36 +343,33 @@ esp_err_t sdspi_host_ch422g_init_device(const sdspi_device_config_t* slot_config
         .gpio_wp = GPIO_UNUSED,
         .gpio_int = GPIO_UNUSED,
         .semphr_int = NULL,
+        .block_buf = NULL,
+        .data_crc_enabled = 0,
+        .spi_handle = NULL,
     };
 
-    // Attach the SD card to the SPI bus
     esp_err_t ret = configure_spi_dev(slot, SDMMC_FREQ_PROBING * 1000);
     if (ret != ESP_OK) {
         ESP_LOGD(TAG, "spi_bus_add_device failed with rc=0x%x", ret);
-        goto cleanup;
+        free(slot);
+        return ret;
     }
 
-    // Ensure CS is released before any clocking
+    // Ensure CS is released before any GO_IDLE clocking.
     ret = cs_high(slot);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to release SD CS via CH422G (%s)", esp_err_to_name(ret));
-        goto cleanup;
+        spi_bus_remove_device(slot->spi_handle);
+        free(slot);
+        return ret;
     }
 
     *out_handle = store_slot_info(slot);
     return ESP_OK;
-cleanup:
-    if (slot->spi_handle) {
-        spi_bus_remove_device(slot->spi_handle);
-        slot->spi_handle = NULL;
-    }
-    free(slot);
-    return ret;
-
 }
 
 esp_err_t sdspi_host_ch422g_start_command(sdspi_dev_handle_t handle, sdspi_hw_cmd_t *cmd, void *data,
-                                   uint32_t data_size, int flags)
+                                         uint32_t data_size, int flags)
 {
     slot_info_t *slot = get_slot_info(handle);
     if (slot == NULL) {
@@ -430,34 +382,34 @@ esp_err_t sdspi_host_ch422g_start_command(sdspi_dev_handle_t handle, sdspi_hw_cm
     if (card_missing(slot)) {
         return ESP_ERR_NOT_FOUND;
     }
-    // save some parts of cmd, as its contents will be overwritten
+
     int cmd_index = cmd->cmd_index;
     uint32_t cmd_arg;
     memcpy(&cmd_arg, cmd->arguments, sizeof(cmd_arg));
     cmd_arg = __builtin_bswap32(cmd_arg);
+
     ESP_LOGV(TAG, "%s: slot=%i, CMD%d, arg=0x%08x flags=0x%x, data=%p, data_size=%i crc=0x%02x",
              __func__, handle, cmd_index, cmd_arg, flags, data, data_size, cmd->crc7);
 
-
-    // For CMD0, clock out 80 cycles to help the card enter idle state,
-    // *before* CS is asserted.
+    // For CMD0, clock out 80 cycles with CS high before asserting CS and sending the command.
     if (cmd_index == MMC_GO_IDLE_STATE) {
-        cs_high(slot);
+        (void)cs_high(slot);
         go_idle_clockout(slot);
     }
-    // actual transaction
+
     esp_err_t ret = ESP_OK;
 
     spi_device_acquire_bus(slot->spi_handle, portMAX_DELAY);
+
     ret = cs_low(slot);
     if (ret != ESP_OK) {
         spi_device_release_bus(slot->spi_handle);
         ESP_LOGE(TAG, "Failed to assert SD CS via CH422G (%s)", esp_err_to_name(ret));
         return ret;
     }
+
     if (flags & SDSPI_CMD_FLAG_DATA) {
         const bool multi_block = flags & SDSPI_CMD_FLAG_MULTI_BLK;
-        //send stop transmission token only when multi-block write and non-SDIO mode
         const bool stop_transmission = multi_block && !(flags & SDSPI_CMD_FLAG_RSP_R5);
         if (flags & SDSPI_CMD_FLAG_WRITE) {
             ret = start_command_write_blocks(slot, cmd, data, data_size, multi_block, stop_transmission);
@@ -467,6 +419,7 @@ esp_err_t sdspi_host_ch422g_start_command(sdspi_dev_handle_t handle, sdspi_hw_cm
     } else {
         ret = start_command_default(slot, flags, cmd);
     }
+
     esp_err_t cs_ret = cs_high(slot);
     if (cs_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to deassert SD CS via CH422G (%s)", esp_err_to_name(cs_ret));
@@ -476,23 +429,22 @@ esp_err_t sdspi_host_ch422g_start_command(sdspi_dev_handle_t handle, sdspi_hw_cm
     release_bus(slot);
     spi_device_release_bus(slot->spi_handle);
 
-    if (ret != ESP_OK) {
-        ESP_LOGD(TAG, "%s: cmd=%d error=0x%x", __func__, cmd_index, ret);
-    } else {
-        // Update internal state when some commands are sent successfully
+    if (ret == ESP_OK) {
         if (cmd_index == SD_CRC_ON_OFF) {
             slot->data_crc_enabled = (uint8_t) cmd_arg;
             ESP_LOGD(TAG, "data CRC set=%d", slot->data_crc_enabled);
         }
+    } else {
+        ESP_LOGD(TAG, "%s: cmd=%d error=0x%x", __func__, cmd_index, ret);
     }
+
     return ret;
 }
 
 static esp_err_t start_command_default(slot_info_t *slot, int flags, sdspi_hw_cmd_t *cmd)
 {
     size_t cmd_size = SDSPI_CMD_R1_SIZE;
-    if ((flags & SDSPI_CMD_FLAG_RSP_R1) ||
-        (flags & SDSPI_CMD_FLAG_NORSP)) {
+    if ((flags & SDSPI_CMD_FLAG_RSP_R1) || (flags & SDSPI_CMD_FLAG_NORSP)) {
         cmd_size = SDSPI_CMD_R1_SIZE;
     } else if (flags & SDSPI_CMD_FLAG_RSP_R2) {
         cmd_size = SDSPI_CMD_R2_SIZE;
@@ -505,57 +457,54 @@ static esp_err_t start_command_default(slot_info_t *slot, int flags, sdspi_hw_cm
     } else if (flags & SDSPI_CMD_FLAG_RSP_R7) {
         cmd_size = SDSPI_CMD_R7_SIZE;
     }
-    //add extra clocks to avoid polling
-    cmd_size += (SDSPI_NCR_MAX_SIZE-SDSPI_NCR_MIN_SIZE);
+
+    cmd_size += (SDSPI_NCR_MAX_SIZE - SDSPI_NCR_MIN_SIZE);
+
     spi_transaction_t t = {
         .flags = 0,
         .length = cmd_size * 8,
         .tx_buffer = cmd,
         .rx_buffer = cmd,
     };
+
     esp_err_t ret = spi_device_polling_transmit(slot->spi_handle, &t);
     if (cmd->cmd_index == MMC_STOP_TRANSMISSION) {
-        /* response is a stuff byte from previous transfer, ignore it */
         cmd->r1 = 0xff;
     }
     if (ret != ESP_OK) {
         ESP_LOGD(TAG, "%s: spi_device_polling_transmit returned 0x%x", __func__, ret);
         return ret;
     }
+
     if (flags & SDSPI_CMD_FLAG_NORSP) {
-        /* no (correct) response expected from the card, so skip polling loop */
-        ESP_LOGV(TAG, "%s: ignoring response byte", __func__);
+        // No (correct) response expected from the card, skip polling loop
         cmd->r1 = 0x00;
+        return ESP_OK;
     }
-    // we have sent and received bytes with enough length.
-    // now shift the response to match the offset of sdspi_hw_cmd_t
-    ret = shift_cmd_response(cmd, cmd_size);
+
+    ret = shift_cmd_response(cmd, (int)cmd_size);
     if (ret != ESP_OK) return ESP_ERR_TIMEOUT;
 
     return ESP_OK;
 }
 
-// Wait until MISO goes high
 static esp_err_t poll_busy(slot_info_t *slot, int timeout_ms, bool polling)
 {
     uint8_t t_rx;
     spi_transaction_t t = {
         .tx_buffer = &t_rx,
-        .flags = SPI_TRANS_USE_RXDATA,  //data stored in rx_data
+        .flags = SPI_TRANS_USE_RXDATA,
         .length = 8,
     };
-    esp_err_t ret;
 
-    int64_t t_end = esp_timer_get_time() + timeout_ms * 1000;
+    int64_t t_end = esp_timer_get_time() + (int64_t)timeout_ms * 1000;
     int nonzero_count = 0;
+
     do {
         t_rx = SDSPI_MOSI_IDLE_VAL;
         t.rx_data[0] = 0;
-        if (polling) {
-            ret = spi_device_polling_transmit(slot->spi_handle, &t);
-        } else {
-            ret = spi_device_transmit(slot->spi_handle, &t);
-        }
+        esp_err_t ret = polling ? spi_device_polling_transmit(slot->spi_handle, &t)
+                                : spi_device_transmit(slot->spi_handle, &t);
         if (ret != ESP_OK) {
             return ret;
         }
@@ -564,14 +513,12 @@ static esp_err_t poll_busy(slot_info_t *slot, int timeout_ms, bool polling)
                 return ESP_OK;
             }
         }
-    } while(esp_timer_get_time() < t_end);
+    } while (esp_timer_get_time() < t_end);
+
     ESP_LOGD(TAG, "%s: timeout", __func__);
     return ESP_ERR_TIMEOUT;
 }
 
-// Wait for data token, reading 8 bytes at a time.
-// If the token is found, write all subsequent bytes to extra_ptr,
-// and store the number of bytes written to extra_size.
 static esp_err_t poll_data_token(slot_info_t *slot, uint8_t *extra_ptr, size_t *extra_size, int timeout_ms)
 {
     uint8_t t_rx[8];
@@ -580,45 +527,40 @@ static esp_err_t poll_data_token(slot_info_t *slot, uint8_t *extra_ptr, size_t *
         .rx_buffer = &t_rx,
         .length = sizeof(t_rx) * 8,
     };
-    esp_err_t ret;
-    int64_t t_end = esp_timer_get_time() + timeout_ms * 1000;
+
+    int64_t t_end = esp_timer_get_time() + (int64_t)timeout_ms * 1000;
+
     do {
         memset(t_rx, SDSPI_MOSI_IDLE_VAL, sizeof(t_rx));
-        ret = spi_device_polling_transmit(slot->spi_handle, &t);
+        esp_err_t ret = spi_device_polling_transmit(slot->spi_handle, &t);
         if (ret != ESP_OK) {
             return ret;
         }
-        bool found = false;
+
         for (size_t byte_idx = 0; byte_idx < sizeof(t_rx); byte_idx++) {
             uint8_t rd_data = t_rx[byte_idx];
             if (rd_data == TOKEN_BLOCK_START) {
-                found = true;
                 memcpy(extra_ptr, t_rx + byte_idx + 1, sizeof(t_rx) - byte_idx - 1);
                 *extra_size = sizeof(t_rx) - byte_idx - 1;
-                break;
+                return ESP_OK;
             }
             if (rd_data != 0xff && rd_data != 0) {
-                ESP_LOGD(TAG, "%s: received 0x%02x while waiting for data",
-                        __func__, rd_data);
+                ESP_LOGD(TAG, "%s: received 0x%02x while waiting for data", __func__, rd_data);
                 return ESP_ERR_INVALID_RESPONSE;
             }
         }
-        if (found) {
-            return ESP_OK;
-        }
     } while (esp_timer_get_time() < t_end);
+
     ESP_LOGD(TAG, "%s: timeout", __func__);
     return ESP_ERR_TIMEOUT;
 }
 
-// the r1 respond could appear 1-8 clocks after the command token is sent
-// this function search for r1 in the buffer after 1 clocks to max 8 clocks
-// then shift the data after R1, to match the definition of sdspi_hw_cmd_t.
 static esp_err_t shift_cmd_response(sdspi_hw_cmd_t* cmd, int sent_bytes)
 {
     uint8_t* pr1 = &cmd->r1;
     int ncr_cnt = 1;
-    while(true) {
+
+    while (true) {
         if ((*pr1 & SD_SPI_R1_NO_RESPONSE) == 0) break;
         pr1++;
         if (++ncr_cnt > 8) return ESP_ERR_NOT_FOUND;
@@ -632,48 +574,6 @@ static esp_err_t shift_cmd_response(sdspi_hw_cmd_t* cmd, int sent_bytes)
     return ESP_OK;
 }
 
-
-/**
- * Receiving one or more blocks of data happens as follows:
- * 1. send command + receive r1 response (SDSPI_CMD_R1_SIZE bytes total)
- * 2. keep receiving bytes until TOKEN_BLOCK_START is encountered (this may
- *    take a while, depending on card's read speed)
- * 3. receive up to SDSPI_MAX_DATA_LEN = 512 bytes of actual data
- * 4. receive 2 bytes of CRC
- * 5. for multi block transfers, go to step 2
- *
- * These steps can be done separately, but that leads to a less than optimal
- * performance on large transfers because of delays between each step.
- * For example, if steps 3 and 4 are separate SPI transactions queued one after
- * another, there will be ~16 microseconds of dead time between end of step 3
- * and the beginning of step 4. A delay between two blocking SPI transactions
- * in step 2 is even higher (~60 microseconds).
- *
- * To improve read performance the following sequence is adopted:
- * 1. Do the first transfer: command + r1 response + 8 extra bytes.
- *    Set pre_scan_data_ptr to point to the 8 extra bytes, and set
- *    pre_scan_data_size to 8.
- * 2. Search pre_scan_data_size bytes for TOKEN_BLOCK_START.
- *    If found, the rest of the bytes contain part of the actual data.
- *    Store pointer to and size of that extra data as extra_data_{ptr,size}.
- *    If not found, fall back to polling for TOKEN_BLOCK_START, 8 bytes at a
- *    time (in poll_data_token function). Deal with extra data in the same way,
- *    by setting extra_data_{ptr,size}.
- * 3. Receive the remaining 512 - extra_data_size bytes, plus 4 extra bytes
- *    (i.e. 516 - extra_data_size). Of the 4 extra bytes, first two will capture
- *    the CRC value, and the other two will capture 0xff 0xfe sequence
- *    indicating the start of the next block. Actual scanning is done by
- *    setting pre_scan_data_ptr to point to these last 2 bytes, and setting
- *    pre_scan_data_size = 2, then going to step 2 to receive the next block.
- *    When the final block is being received, the number of extra bytes is 2
- *    (only for CRC), because we don't need to wait for start token of the
- *    next block, and some cards are getting confused by these two extra bytes.
- *
- * With this approach the delay between blocks of a multi-block transfer is
- * ~95 microseconds, out of which 35 microseconds are spend doing the CRC check.
- * Further speedup is possible by pipelining transfers and CRC checks, at an
- * expense of one extra temporary buffer.
- */
 static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cmd,
         uint8_t *data, uint32_t rx_length, bool need_stop_command)
 {
@@ -691,9 +591,6 @@ static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cm
     size_t pre_scan_data_size = SDSPI_RESPONSE_MAX_DELAY;
     uint8_t* pre_scan_data_ptr = cmd_u8 + SDSPI_CMD_R1_SIZE;
 
-    /* R1 response is delayed by 1-8 bytes from the request.
-     * This loop searches for the response and writes it to cmd->r1.
-     */
     while ((cmd->r1 & SD_SPI_R1_NO_RESPONSE) != 0 && pre_scan_data_size > 0) {
         cmd->r1 = *pre_scan_data_ptr;
         ++pre_scan_data_ptr;
@@ -719,7 +616,6 @@ static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cm
         }
 
         if (need_poll) {
-            // Wait for data to be ready
             ret = poll_data_token(slot, cmd_u8 + SDSPI_CMD_R1_SIZE, &extra_data_size, cmd->timeout_ms);
             if (ret != ESP_OK) {
                 return ret;
@@ -729,7 +625,6 @@ static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cm
             }
         }
 
-        // Arrange RX buffer
         size_t will_receive = MIN(rx_length, SDSPI_MAX_DATA_LEN) - extra_data_size;
         uint8_t* rx_data;
         ret = get_block_buf(slot, &rx_data);
@@ -737,9 +632,9 @@ static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cm
             return ret;
         }
 
-        // receive actual data
         const size_t receive_extra_bytes = (rx_length > SDSPI_MAX_DATA_LEN) ? 4 : 2;
         memset(rx_data, 0xff, will_receive + receive_extra_bytes);
+
         spi_transaction_t t_data = {
             .length = (will_receive + receive_extra_bytes) * 8,
             .rx_buffer = rx_data,
@@ -751,24 +646,19 @@ static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cm
             return ret;
         }
 
-        // CRC bytes need to be received even if CRC is not enabled
         uint16_t crc = UINT16_MAX;
         memcpy(&crc, rx_data + will_receive, sizeof(crc));
 
-        // Bytes to scan for the start token
         pre_scan_data_size = receive_extra_bytes - sizeof(crc);
         pre_scan_data_ptr = rx_data + will_receive + sizeof(crc);
 
-        // Copy data to the destination buffer
         memcpy(data + extra_data_size, rx_data, will_receive);
         if (extra_data_size) {
             memcpy(data, extra_data_ptr, extra_data_size);
         }
 
-        // compute CRC of the received data
-        uint16_t crc_of_data = 0;
         if (slot->data_crc_enabled) {
-            crc_of_data = sdspi_crc16(data, will_receive + extra_data_size);
+            uint16_t crc_of_data = sdspi_crc16(data, will_receive + extra_data_size);
             if (crc_of_data != crc) {
                 ESP_LOGE(TAG, "data CRC failed, got=0x%04x expected=0x%04x", crc_of_data, crc);
                 ESP_LOG_BUFFER_HEX(TAG, data, 16);
@@ -778,35 +668,26 @@ static esp_err_t start_command_read_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cm
 
         data += will_receive + extra_data_size;
         rx_length -= will_receive + extra_data_size;
-        extra_data_size = 0;
-        extra_data_ptr = NULL;
     }
 
     if (need_stop_command) {
-        // To end multi block transfer, send stop command and wait for the
-        // card to process it
         sdspi_hw_cmd_t stop_cmd;
         make_hw_cmd_ch422g(MMC_STOP_TRANSMISSION, 0, cmd->timeout_ms, &stop_cmd);
+
         ret = start_command_default(slot, SDSPI_CMD_FLAG_RSP_R1, &stop_cmd);
         if (ret != ESP_OK) {
             return ret;
         }
-        if (stop_cmd.r1 != 0) {
-            ESP_LOGD(TAG, "%s: STOP_TRANSMISSION response 0x%02x", __func__, stop_cmd.r1);
-        }
+
         ret = poll_busy(slot, cmd->timeout_ms, use_polling);
         if (ret != ESP_OK) {
             return ret;
         }
     }
+
     return ESP_OK;
 }
 
-/* For CMD53, we can send in byte mode, or block mode
- * The data start token is different, and cannot be determined by the length
- * That's why we need ``multi_block``.
- * It's also different that stop transmission token is not needed in the SDIO mode.
- */
 static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *cmd,
         const uint8_t *data, uint32_t tx_length, bool multi_block, bool stop_trans)
 {
@@ -814,9 +695,8 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
         ESP_LOGW(TAG, "%s: card write protected", __func__);
         return ESP_ERR_INVALID_STATE;
     }
-    // Send the minimum length that is sure to get the complete response
-    // SD cards always return R1 (1bytes), SDIO returns R5 (2 bytes)
-    const int send_bytes = SDSPI_CMD_R5_SIZE+SDSPI_NCR_MAX_SIZE-SDSPI_NCR_MIN_SIZE;
+
+    const int send_bytes = SDSPI_CMD_R5_SIZE + SDSPI_NCR_MAX_SIZE - SDSPI_NCR_MIN_SIZE;
 
     spi_transaction_t t_command = {
         .length = send_bytes * 8,
@@ -828,18 +708,15 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
         return ret;
     }
 
-    // check if command response valid
     ret = shift_cmd_response(cmd, send_bytes);
     if (ret != ESP_OK) {
         ESP_LOGD(TAG, "%s: check_cmd_response returned 0x%x", __func__, ret);
         return ret;
     }
 
-    uint8_t start_token = multi_block ?
-             TOKEN_BLOCK_START_WRITE_MULTI : TOKEN_BLOCK_START;
+    uint8_t start_token = multi_block ? TOKEN_BLOCK_START_WRITE_MULTI : TOKEN_BLOCK_START;
 
     while (tx_length > 0) {
-        // Write block start token
         spi_transaction_t t_start_token = {
             .length = sizeof(start_token) * 8,
             .tx_buffer = &start_token
@@ -849,11 +726,10 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
             return ret;
         }
 
-        // Prepare data to be sent
         size_t will_send = MIN(tx_length, SDSPI_MAX_DATA_LEN);
         const uint8_t* tx_data = data;
+
         if (!esp_ptr_in_dram(tx_data)) {
-            // If the pointer can't be used with DMA, copy data into a new buffer
             uint8_t* tmp;
             ret = get_block_buf(slot, &tmp);
             if (ret != ESP_OK) {
@@ -863,7 +739,6 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
             tx_data = tmp;
         }
 
-        // Write data
         spi_transaction_t t_data = {
             .length = will_send * 8,
             .tx_buffer = tx_data,
@@ -873,13 +748,12 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
             return ret;
         }
 
-        // Write CRC and get the response in one transaction
-        uint16_t crc = sdspi_crc16(data, will_send);
-        const int size_crc_response = sizeof(crc) + 1;
+        uint16_t crc = sdspi_crc16((const uint8_t*)data, will_send);
+        const int size_crc_response = (int)(sizeof(crc) + 1);
 
         spi_transaction_t t_crc_rsp = {
             .length = size_crc_response * 8,
-            .flags = SPI_TRANS_USE_TXDATA|SPI_TRANS_USE_RXDATA,
+            .flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA,
         };
         memset(t_crc_rsp.tx_data, 0xff, 4);
         memcpy(t_crc_rsp.tx_data, &crc, sizeof(crc));
@@ -891,6 +765,7 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
 
         uint8_t data_rsp = t_crc_rsp.rx_data[2];
         if (!SD_SPI_DATA_RSP_VALID(data_rsp)) return ESP_ERR_INVALID_RESPONSE;
+
         switch (SD_SPI_DATA_RSP(data_rsp)) {
         case SD_SPI_DATA_ACCEPTED:
             break;
@@ -902,7 +777,6 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
             return ESP_ERR_INVALID_RESPONSE;
         }
 
-        // Wait for the card to finish writing data
         ret = poll_busy(slot, cmd->timeout_ms, no_use_polling);
         if (ret != ESP_OK) {
             return ret;
@@ -938,6 +812,7 @@ static esp_err_t start_command_write_blocks(slot_info_t *slot, sdspi_hw_cmd_t *c
 esp_err_t sdspi_host_ch422g_do_transaction(int slot, sdmmc_command_t *cmdinfo)
 {
     _lock_acquire(&s_lock);
+
     WORD_ALIGNED_ATTR sdspi_hw_cmd_t hw_cmd;
     make_hw_cmd_ch422g(cmdinfo->opcode, cmdinfo->arg, cmdinfo->timeout_ms, &hw_cmd);
 
@@ -994,11 +869,7 @@ esp_err_t sdspi_host_ch422g_do_transaction(int slot, sdmmc_command_t *cmdinfo)
         }
     }
 
-    if (ret == ESP_OK) {
-        s_app_cmd = (cmdinfo->opcode == MMC_APP_CMD);
-    } else {
-        s_app_cmd = false;
-    }
+    s_app_cmd = (ret == ESP_OK && cmdinfo->opcode == MMC_APP_CMD);
     _lock_release(&s_lock);
     return ret;
 }
@@ -1006,31 +877,27 @@ esp_err_t sdspi_host_ch422g_do_transaction(int slot, sdmmc_command_t *cmdinfo)
 esp_err_t sdspi_host_ch422g_io_int_enable(sdspi_dev_handle_t handle)
 {
     (void)handle;
-    // Interrupt line is not routed for this board; nothing to enable.
     return ESP_OK;
 }
 
-//the interrupt will give the semaphore and then disable itself
 esp_err_t sdspi_host_ch422g_io_int_wait(sdspi_dev_handle_t handle, TickType_t timeout_ticks)
 {
     (void)handle;
     (void)timeout_ticks;
-    // No dedicated SDIO interrupt line; treat as unsupported but non-fatal.
     return ESP_OK;
 }
 
-//Deprecated, make use of new sdspi_host_ch422g_init_device
+// Deprecated API, kept for compatibility with older code.
 esp_err_t sdspi_host_ch422g_init_slot(int slot, const sdspi_slot_config_t* slot_config)
 {
     esp_err_t ret = ESP_OK;
     if (get_slot_info(slot) != NULL) {
-        ESP_LOGE(TAG, "Bus already initialized. Call `sdspi_host_init_dev` to attach an sdspi device to an initialized bus.");
+        ESP_LOGE(TAG, "Bus already initialized. Call `sdspi_host_init_dev` to attach an sdspi device.");
         return ESP_ERR_INVALID_STATE;
     }
 
-    //Assume the slot number equals to the host id.
     spi_host_device_t host_id = slot;
-    // Initialize SPI bus
+
     spi_bus_config_t buscfg = {
         .miso_io_num = slot_config->gpio_miso,
         .mosi_io_num = slot_config->gpio_mosi,
@@ -1038,8 +905,8 @@ esp_err_t sdspi_host_ch422g_init_slot(int slot, const sdspi_slot_config_t* slot_
         .quadwp_io_num = GPIO_NUM_NC,
         .quadhd_io_num = GPIO_NUM_NC
     };
-    ret = spi_bus_initialize(host_id, &buscfg,
-            slot_config->dma_channel);
+
+    ret = spi_bus_initialize(host_id, &buscfg, slot_config->dma_channel);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "spi_bus_initialize failed with rc=0x%x", ret);
         return ret;
@@ -1053,20 +920,21 @@ esp_err_t sdspi_host_ch422g_init_slot(int slot, const sdspi_slot_config_t* slot_
         .gpio_wp = slot_config->gpio_wp,
         .gpio_int = slot_config->gpio_int,
     };
-    ret =  sdspi_host_ch422g_init_device(&dev_config, &sdspi_handle);
+
+    ret = sdspi_host_ch422g_init_device(&dev_config, &sdspi_handle);
     if (ret != ESP_OK) {
-        goto cleanup;
+        spi_bus_free(slot);
+        return ret;
     }
+
     if (sdspi_handle != (int)host_id) {
-        ESP_LOGE(TAG, "The deprecated sdspi_host_init_slot should be called before all other devices on the specified bus.");
-        sdspi_host_ch422g_remove_device(sdspi_handle);
-        ret = ESP_ERR_INVALID_STATE;
-        goto cleanup;
+        ESP_LOGE(TAG, "Deprecated sdspi_host_init_slot should be called before other devices on the bus.");
+        (void)sdspi_host_ch422g_remove_device(sdspi_handle);
+        spi_bus_free(slot);
+        return ESP_ERR_INVALID_STATE;
     }
+
     return ESP_OK;
-    cleanup:
-    spi_bus_free(slot);
-    return ret;
 }
 
 sdmmc_host_t sdspi_host_ch422g_default(void)

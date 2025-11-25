@@ -274,7 +274,7 @@ static esp_err_t go_idle_clockout(slot_info_t *slot)
     }
 
     ESP_LOGD(TAG, "MISO during idle clocks (first 10 bytes)");
-    esp_log_buffer_hex(TAG, data, 10);
+    ESP_LOG_BUFFER_HEX(TAG, data, 10);
     return ESP_OK;
 }
 

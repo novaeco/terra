@@ -8,38 +8,37 @@
 #include "esp_vfs_fat.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
 #include "sdmmc_cmd.h"
 
 #include "ch422g.h"
+#include "sdspi_ch422g.h"
 
 // Waveshare ESP32-S3 Touch LCD 7B: microSD over SPI with CS on CH422G EXIO4.
-// CS is driven manually through the IO expander; the VFS layer sees a "dummy" CS GPIO.
+// IMPORTANT:
+// - The real CS is I2C-driven (CH422G), so the stock SDSPI host (GPIO CS) cannot be used reliably.
+// - Use the custom SDSPI host (sdspi_ch422g.c) which asserts/deasserts real CS via CH422G per command/transaction.
+// - Mount SD *before* starting the RGB panel to avoid ISR-related watchdogs during GPIO/SPI setup.
 
 #ifndef CONFIG_SDCARD_SPI_MOSI_GPIO
-#define CONFIG_SDCARD_SPI_MOSI_GPIO  GPIO_NUM_11  // Fallback wiring if IO extension unavailable
+#define CONFIG_SDCARD_SPI_MOSI_GPIO  GPIO_NUM_11
 #endif
 #ifndef CONFIG_SDCARD_SPI_MISO_GPIO
-#define CONFIG_SDCARD_SPI_MISO_GPIO  GPIO_NUM_13  // Fallback wiring if IO extension unavailable
+#define CONFIG_SDCARD_SPI_MISO_GPIO  GPIO_NUM_13
 #endif
 #ifndef CONFIG_SDCARD_SPI_SCK_GPIO
-#define CONFIG_SDCARD_SPI_SCK_GPIO   GPIO_NUM_12  // Fallback wiring if IO extension unavailable
+#define CONFIG_SDCARD_SPI_SCK_GPIO   GPIO_NUM_12
 #endif
 #ifndef CONFIG_SDCARD_SPI_HOST
-#define CONFIG_SDCARD_SPI_HOST       SPI2_HOST    // Default to FSPI on ESP32-S3 (host=2)
+#define CONFIG_SDCARD_SPI_HOST       SPI2_HOST
 #endif
 #ifndef CONFIG_SDCARD_MAX_FILES
-#define CONFIG_SDCARD_MAX_FILES      5            // Conservative default if Kconfig entry is absent
+#define CONFIG_SDCARD_MAX_FILES      5
 #endif
 
-// Dummy CS pin required by esp_vfs_fat_sdspi_mount, not connected on hardware.
-// GPIO33 is free on the Waveshare ESP32-S3 Touch LCD 7B and can be driven safely.
-#define SDCARD_DUMMY_CS_GPIO GPIO_NUM_33
-
-// Waveshare ESP32-S3 Touch LCD 7B µSD wiring (SPI via CH422G):
-// MOSI = GPIO11, MISO = GPIO13, SCK = GPIO12, CS = EXIO4 (active low)
+// Waveshare ESP32-S3 Touch LCD 7B µSD wiring:
+// MOSI = GPIO11, MISO = GPIO13, SCK = GPIO12, CS = CH422G EXIO4 (active low)
 
 #define SDCARD_MOUNT_POINT "/sdcard"
 
@@ -55,117 +54,59 @@ static bool sdcard_no_media_error(esp_err_t err)
 
 static esp_err_t sdcard_mount(void)
 {
-    if (s_mounted)
-    {
+    if (s_mounted) {
         return ESP_OK;
     }
 
-    if (!ch422g_sdcard_cs_available())
-    {
+    if (!ch422g_sdcard_cs_available()) {
         ESP_LOGE(TAG, "CH422G not ready; cannot drive SD CS (EXIO4)");
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_LOGI(TAG, "step 1: set CS high via CH422G (idle)");
+    // Ensure SD CS is high (inactive) before starting the SDSPI init sequence.
+    ESP_LOGI(TAG, "CS idle high via CH422G");
     ESP_RETURN_ON_ERROR(ch422g_set_sdcard_cs(false), TAG, "Failed to deassert SD CS via CH422G");
     vTaskDelay(pdMS_TO_TICKS(2));
 
-    // Configure the dummy CS GPIO to satisfy the SDSPI API; it is not wired to the card.
-    ESP_LOGI(TAG, "step 1b: configure dummy CS GPIO (isolated from CH422G/I2C path)");
-    const gpio_config_t dummy_cs_cfg = {
-        .pin_bit_mask = 1ULL << SDCARD_DUMMY_CS_GPIO,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_RETURN_ON_ERROR(gpio_config(&dummy_cs_cfg), TAG, "Failed to init dummy CS GPIO");
-    ESP_RETURN_ON_ERROR(gpio_set_level(SDCARD_DUMMY_CS_GPIO, 1), TAG, "Failed to set dummy CS high");
-    ESP_LOGI(TAG, "step 1c: dummy CS configured high (no ISR involvement)");
-
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    host.slot = CONFIG_SDCARD_SPI_HOST; // SPI2_HOST expected
-    host.max_freq_khz = 20000;          // Conservative 20 MHz for stable bring-up
-
+    // Initialize SPI bus (data lines are native GPIOs).
     spi_bus_config_t bus_config = {
         .mosi_io_num = CONFIG_SDCARD_SPI_MOSI_GPIO,
         .miso_io_num = CONFIG_SDCARD_SPI_MISO_GPIO,
         .sclk_io_num = CONFIG_SDCARD_SPI_SCK_GPIO,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 4000,
+        .max_transfer_sz = 4000, // SDSPI uses 512B blocks; keep conservative
     };
 
     bool bus_initialized_here = false;
-    ESP_LOGI(TAG, "step 2: spi_bus_initialize (host=%d, mosi=%d, miso=%d, sck=%d, exio_cs=EXIO4, dummy_cs=%d)",
-             host.slot, CONFIG_SDCARD_SPI_MOSI_GPIO, CONFIG_SDCARD_SPI_MISO_GPIO, CONFIG_SDCARD_SPI_SCK_GPIO, SDCARD_DUMMY_CS_GPIO);
 
-    esp_err_t err = spi_bus_initialize(host.slot, &bus_config, SDSPI_DEFAULT_DMA);
-    if (err == ESP_ERR_INVALID_STATE)
-    {
+    ESP_LOGI(TAG, "spi_bus_initialize(host=%d, mosi=%d, miso=%d, sck=%d)",
+             CONFIG_SDCARD_SPI_HOST, CONFIG_SDCARD_SPI_MOSI_GPIO, CONFIG_SDCARD_SPI_MISO_GPIO, CONFIG_SDCARD_SPI_SCK_GPIO);
+
+    esp_err_t err = spi_bus_initialize(CONFIG_SDCARD_SPI_HOST, &bus_config, SDSPI_DEFAULT_DMA);
+    if (err == ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "SPI bus already initialized, reusing");
-    }
-    else if (err != ESP_OK)
-    {
+    } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init SPI bus (%s)", esp_err_to_name(err));
         return err;
-    }
-    else
-    {
+    } else {
         bus_initialized_here = true;
     }
 
-    ESP_LOGI(TAG, "step 3: send 80 SPI idle clocks with CS floating (CH422G) and spics_io_num=-1");
-    const uint8_t idle_clock_bytes[10] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-    spi_device_handle_t idle_dev = NULL;
-    const spi_device_interface_config_t idle_dev_cfg = {
-        .clock_speed_hz = 400000,
-        .mode = 0,
-        .spics_io_num = -1,
-        .queue_size = 1,
-    };
+    // Use the custom host that controls the real CS via CH422G.
+    sdmmc_host_t host = sdspi_host_ch422g_default();
+    host.slot = CONFIG_SDCARD_SPI_HOST;
+    host.max_freq_khz = 20000; // The driver starts at probing freq then switches; keep conservative
 
-    err = spi_bus_add_device(host.slot, &idle_dev_cfg, &idle_dev);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to add idle-clock SPI device (%s)", esp_err_to_name(err));
-        if (bus_initialized_here)
-        {
-            spi_bus_free(host.slot);
-        }
-        return err;
-    }
+    sdspi_device_config_t dev_cfg = SDSPI_DEVICE_CONFIG_DEFAULT();
+    dev_cfg.host_id = host.slot;
 
-    spi_transaction_t idle_tx = {
-        .length = sizeof(idle_clock_bytes) * 8,
-        .tx_buffer = idle_clock_bytes,
-    };
-    err = spi_device_polling_transmit(idle_dev, &idle_tx);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to send idle clocks (%s)", esp_err_to_name(err));
-        spi_bus_remove_device(idle_dev);
-        if (bus_initialized_here)
-        {
-            spi_bus_free(host.slot);
-        }
-        return err;
-    }
-    spi_bus_remove_device(idle_dev);
-
-    ESP_LOGI(TAG, "step 4: assert CS low via CH422G and keep it low for the mount");
-    err = ch422g_set_sdcard_cs(true);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to assert SD CS via CH422G (%s)", esp_err_to_name(err));
-        if (bus_initialized_here)
-        {
-            spi_bus_free(host.slot);
-        }
-        return err;
-    }
-
-    sdmmc_card_t *card = NULL;
+    // gpio_cs is not wired to ESP32; CS is driven by CH422G in the custom host driver.
+    // Keep it NC to avoid accidental GPIO manipulation.
+    dev_cfg.gpio_cs  = GPIO_NUM_NC;
+    dev_cfg.gpio_cd  = GPIO_NUM_NC;
+    dev_cfg.gpio_wp  = GPIO_NUM_NC;
+    dev_cfg.gpio_int = GPIO_NUM_NC;
 
     const esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
@@ -174,37 +115,29 @@ static esp_err_t sdcard_mount(void)
         .disk_status_check_enable = true,
     };
 
-    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.host_id = host.slot;
-    slot_config.gpio_cs = SDCARD_DUMMY_CS_GPIO; // satisfies the API; real CS is EXIO4 via CH422G
+    sdmmc_card_t *card = NULL;
 
-    ESP_LOGI(TAG, "step 5: esp_vfs_fat_sdspi_mount start");
-    err = esp_vfs_fat_sdspi_mount(SDCARD_MOUNT_POINT, &host, &slot_config, &mount_config, &card);
+    ESP_LOGI(TAG, "esp_vfs_fat_sdspi_mount start (custom CH422G CS host)");
+    err = esp_vfs_fat_sdspi_mount(SDCARD_MOUNT_POINT, &host, &dev_cfg, &mount_config, &card);
+    ESP_LOGI(TAG, "esp_vfs_fat_sdspi_mount result=%s", esp_err_to_name(err));
 
-    ESP_LOGI(TAG, "step 6: esp_vfs_fat_sdspi_mount result=%s", esp_err_to_name(err));
-
-    if (err != ESP_OK)
-    {
-        if (sdcard_no_media_error(err))
-        {
+    if (err != ESP_OK) {
+        if (sdcard_no_media_error(err)) {
             ESP_LOGW(TAG, "No SD card detected on %s; continuing without storage", SDCARD_MOUNT_POINT);
-        }
-        else if (err == ESP_ERR_TIMEOUT)
-        {
+        } else if (err == ESP_ERR_TIMEOUT) {
             ESP_LOGW(TAG, "microSD init timed out (%s); card may be missing or not responding; continuing without storage", esp_err_to_name(err));
-        }
-        else if (err == ESP_ERR_INVALID_RESPONSE || err == ESP_FAIL)
-        {
+        } else if (err == ESP_ERR_INVALID_RESPONSE || err == ESP_FAIL) {
             ESP_LOGW(TAG, "microSD init failed, card not responding correctly (%s); continuing without storage", esp_err_to_name(err));
-        }
-        else
-        {
+        } else {
             ESP_LOGE(TAG, "Failed to mount %s (%s)", SDCARD_MOUNT_POINT, esp_err_to_name(err));
         }
-        ch422g_set_sdcard_cs(false);
-        if (bus_initialized_here)
-        {
-            spi_bus_free(host.slot);
+
+        // Ensure CS released.
+        (void)ch422g_set_sdcard_cs(false);
+
+        // If we initialized the bus in this function, free it on failure.
+        if (bus_initialized_here) {
+            (void)spi_bus_free(CONFIG_SDCARD_SPI_HOST);
         }
         return err;
     }
@@ -229,8 +162,7 @@ bool sdcard_is_mounted(void)
 
 esp_err_t sdcard_test_file(void)
 {
-    if (!s_mounted)
-    {
+    if (!s_mounted) {
         ESP_LOGW(TAG, "Cannot run sdcard_test_file: card not mounted");
         return ESP_ERR_INVALID_STATE;
     }
@@ -239,8 +171,7 @@ esp_err_t sdcard_test_file(void)
     static const char *payload = "ESP32-S3 storage test\n";
 
     FILE *f = fopen(test_path, "w");
-    if (f == NULL)
-    {
+    if (f == NULL) {
         ESP_LOGE(TAG, "Failed to open %s for writing", test_path);
         return ESP_FAIL;
     }
@@ -248,15 +179,13 @@ esp_err_t sdcard_test_file(void)
     size_t written = fwrite(payload, 1, strlen(payload), f);
     fclose(f);
 
-    if (written != strlen(payload))
-    {
+    if (written != strlen(payload)) {
         ESP_LOGE(TAG, "Short write on %s (%zu/%zu)", test_path, written, strlen(payload));
         return ESP_FAIL;
     }
 
     f = fopen(test_path, "r");
-    if (f == NULL)
-    {
+    if (f == NULL) {
         ESP_LOGE(TAG, "Failed to open %s for reading", test_path);
         return ESP_FAIL;
     }
@@ -265,14 +194,12 @@ esp_err_t sdcard_test_file(void)
     size_t read = fread(buffer, 1, sizeof(buffer) - 1, f);
     fclose(f);
 
-    if (read != strlen(payload))
-    {
+    if (read != strlen(payload)) {
         ESP_LOGE(TAG, "Unexpected length read (%zu/%zu)", read, strlen(payload));
         return ESP_FAIL;
     }
 
-    if (strncmp(buffer, payload, strlen(payload)) != 0)
-    {
+    if (strncmp(buffer, payload, strlen(payload)) != 0) {
         ESP_LOGE(TAG, "Content mismatch: %s", buffer);
         return ESP_FAIL;
     }

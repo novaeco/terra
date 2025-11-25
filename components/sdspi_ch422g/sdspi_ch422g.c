@@ -31,6 +31,7 @@
 #include "sdspi_private.h"
 #include "sdspi_crc.h"
 #include "esp_timer.h"
+#include "esp_rom_sys.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -212,6 +213,8 @@ static esp_err_t cs_low(slot_info_t *slot)
     (void)slot;
     esp_err_t err = ch422g_set_sdcard_cs(true);
     ESP_LOGD(TAG, "CS -> LOW (assert), rc=%s", esp_err_to_name(err));
+    // CS toggles through I2C → CH422G, give it a few microseconds to settle
+    esp_rom_delay_us(5);
     return err;
 }
 
@@ -279,6 +282,57 @@ static esp_err_t configure_spi_dev(slot_info_t *slot, int clock_speed_hz)
 
 esp_err_t sdspi_host_ch422g_init(void)
 {
+    return ESP_OK;
+}
+
+static esp_err_t ensure_slot_initialized(int host_id, slot_info_t **out_slot)
+{
+    slot_info_t *slot = get_slot_info((sdspi_dev_handle_t)host_id);
+    if (slot != NULL) {
+        *out_slot = slot;
+        return ESP_OK;
+    }
+
+    if (!ch422g_sdcard_cs_available()) {
+        ESP_LOGE(TAG, "CH422G unavailable; cannot create SD slot");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    slot = calloc(1, sizeof(slot_info_t));
+    if (slot == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    *slot = (slot_info_t) {
+        .host_id = host_id,
+        .gpio_cs = GPIO_UNUSED,
+        .gpio_cd = GPIO_UNUSED,
+        .gpio_wp = GPIO_UNUSED,
+        .gpio_int = GPIO_UNUSED,
+        .semphr_int = NULL,
+        .block_buf = NULL,
+        .data_crc_enabled = 0,
+        .spi_handle = NULL,
+    };
+
+    esp_err_t ret = configure_spi_dev(slot, SDMMC_FREQ_PROBING * 1000);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add SPI device for host %d (%s)", host_id, esp_err_to_name(ret));
+        free(slot);
+        return ret;
+    }
+
+    ret = cs_high(slot);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to release SD CS via CH422G during slot init (%s)", esp_err_to_name(ret));
+        spi_bus_remove_device(slot->spi_handle);
+        free(slot);
+        return ret;
+    }
+
+    (void)store_slot_info(slot);
+    *out_slot = slot;
+    ESP_LOGI(TAG, "Slot %d initialized for CH422G-controlled SDSPI", host_id);
     return ESP_OK;
 }
 
@@ -377,7 +431,10 @@ esp_err_t sdspi_host_ch422g_start_command(sdspi_dev_handle_t handle, sdspi_hw_cm
 {
     slot_info_t *slot = get_slot_info(handle);
     if (slot == NULL) {
-        return ESP_ERR_INVALID_ARG;
+        esp_err_t init_ret = ensure_slot_initialized((int)handle, &slot);
+        if (init_ret != ESP_OK) {
+            return init_ret;
+        }
     }
     if (!ch422g_sdcard_cs_available()) {
         ESP_LOGE(TAG, "CH422G not available; cannot start SD command");

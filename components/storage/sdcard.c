@@ -14,7 +14,6 @@
 #include "sdmmc_cmd.h"
 
 #include "ch422g.h"
-#include "sdspi_ch422g.h"
 
 // Waveshare ESP32-S3 Touch LCD 7B: microSD over SPI with CS on CH422G EXIO4.
 // CS is driven manually through the IO expander; the VFS layer sees a "dummy" CS GPIO.
@@ -67,6 +66,10 @@ static esp_err_t sdcard_mount(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    ESP_LOGI(TAG, "step 1: set CS high via CH422G (idle)");
+    ESP_RETURN_ON_ERROR(ch422g_set_sdcard_cs(false), TAG, "Failed to deassert SD CS via CH422G");
+    vTaskDelay(pdMS_TO_TICKS(2));
+
     // Configure the dummy CS GPIO to satisfy the SDSPI API; it is not wired to the card.
     const gpio_config_t dummy_cs_cfg = {
         .pin_bit_mask = 1ULL << SDCARD_DUMMY_CS_GPIO,
@@ -78,11 +81,7 @@ static esp_err_t sdcard_mount(void)
     ESP_RETURN_ON_ERROR(gpio_config(&dummy_cs_cfg), TAG, "Failed to init dummy CS GPIO");
     ESP_RETURN_ON_ERROR(gpio_set_level(SDCARD_DUMMY_CS_GPIO, 1), TAG, "Failed to set dummy CS high");
 
-    // Force the real CS low via CH422G before probing the card.
-    ESP_RETURN_ON_ERROR(ch422g_set_sdcard_cs(true), TAG, "Failed to assert SD CS via CH422G");
-    vTaskDelay(pdMS_TO_TICKS(5));
-
-    sdmmc_host_t host = sdspi_host_ch422g_default();
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = CONFIG_SDCARD_SPI_HOST; // SPI2_HOST expected
     host.max_freq_khz = 20000;          // Conservative 20 MHz for stable bring-up
 
@@ -96,9 +95,8 @@ static esp_err_t sdcard_mount(void)
     };
 
     bool bus_initialized_here = false;
-    ESP_LOGI(TAG, "SDSPI config (CH422G CS): host=%d, mosi=%d, miso=%d, sck=%d, exio_cs=EXIO4, dummy_cs=%d",
-             host.slot, CONFIG_SDCARD_SPI_MOSI_GPIO, CONFIG_SDCARD_SPI_MISO_GPIO, CONFIG_SDCARD_SPI_SCK_GPIO,
-             SDCARD_DUMMY_CS_GPIO);
+    ESP_LOGI(TAG, "step 2: spi_bus_initialize (host=%d, mosi=%d, miso=%d, sck=%d, exio_cs=EXIO4, dummy_cs=%d)",
+             host.slot, CONFIG_SDCARD_SPI_MOSI_GPIO, CONFIG_SDCARD_SPI_MISO_GPIO, CONFIG_SDCARD_SPI_SCK_GPIO, SDCARD_DUMMY_CS_GPIO);
 
     esp_err_t err = spi_bus_initialize(host.slot, &bus_config, SDSPI_DEFAULT_DMA);
     if (err == ESP_ERR_INVALID_STATE)
@@ -115,6 +113,56 @@ static esp_err_t sdcard_mount(void)
         bus_initialized_here = true;
     }
 
+    ESP_LOGI(TAG, "step 3: send 80 SPI idle clocks with CS floating (CH422G) and spics_io_num=-1");
+    const uint8_t idle_clock_bytes[10] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    spi_device_handle_t idle_dev = NULL;
+    const spi_device_interface_config_t idle_dev_cfg = {
+        .clock_speed_hz = 400000,
+        .mode = 0,
+        .spics_io_num = -1,
+        .queue_size = 1,
+    };
+
+    err = spi_bus_add_device(host.slot, &idle_dev_cfg, &idle_dev);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to add idle-clock SPI device (%s)", esp_err_to_name(err));
+        if (bus_initialized_here)
+        {
+            spi_bus_free(host.slot);
+        }
+        return err;
+    }
+
+    spi_transaction_t idle_tx = {
+        .length = sizeof(idle_clock_bytes) * 8,
+        .tx_buffer = idle_clock_bytes,
+    };
+    err = spi_device_polling_transmit(idle_dev, &idle_tx);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send idle clocks (%s)", esp_err_to_name(err));
+        spi_bus_remove_device(idle_dev);
+        if (bus_initialized_here)
+        {
+            spi_bus_free(host.slot);
+        }
+        return err;
+    }
+    spi_bus_remove_device(idle_dev);
+
+    ESP_LOGI(TAG, "step 4: assert CS low via CH422G and keep it low for the mount");
+    err = ch422g_set_sdcard_cs(true);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to assert SD CS via CH422G (%s)", esp_err_to_name(err));
+        if (bus_initialized_here)
+        {
+            spi_bus_free(host.slot);
+        }
+        return err;
+    }
+
     sdmmc_card_t *card = NULL;
 
     const esp_vfs_fat_sdmmc_mount_config_t mount_config = {
@@ -128,12 +176,10 @@ static esp_err_t sdcard_mount(void)
     slot_config.host_id = host.slot;
     slot_config.gpio_cs = SDCARD_DUMMY_CS_GPIO; // satisfies the API; real CS is EXIO4 via CH422G
 
+    ESP_LOGI(TAG, "step 5: esp_vfs_fat_sdspi_mount start");
     err = esp_vfs_fat_sdspi_mount(SDCARD_MOUNT_POINT, &host, &slot_config, &mount_config, &card);
 
-    if (err != ESP_OK)
-    {
-        ESP_LOGW(TAG, "esp_vfs_fat_sdspi_mount failed: %s", esp_err_to_name(err));
-    }
+    ESP_LOGI(TAG, "step 6: esp_vfs_fat_sdspi_mount result=%s", esp_err_to_name(err));
 
     if (err != ESP_OK)
     {
@@ -163,9 +209,6 @@ static esp_err_t sdcard_mount(void)
 
     s_card = card;
     s_mounted = true;
-
-    // Release CS after successful negotiation; runtime transactions toggle CS through the custom host.
-    ch422g_set_sdcard_cs(false);
 
     sdmmc_card_print_info(stdout, card);
     ESP_LOGI(TAG, "microSD mounted OK on %s", SDCARD_MOUNT_POINT);

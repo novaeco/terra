@@ -7,12 +7,11 @@
 #include "freertos/task.h"
 
 #include "i2c_bus_shared.h"
+#include "sdkconfig.h"
 
 #define CH422G_I2C_TIMEOUT_MS      i2c_bus_shared_timeout_ms()
 #define CH422G_I2C_RETRIES         3
 #define CH422G_I2C_RETRY_DELAY_MS  3
-
-#define IOEXT_I2C_ADDRESS          0x24         // CH32V003 (Waveshare IO extension)
 
 // Bitfield mapping for the external IO expander (EXIO1..EXIO8 -> bit0..bit7)
 #define EXIO1_BIT                  (1U << 0)    // TP_RST (active low)
@@ -32,6 +31,12 @@ static struct
     SemaphoreHandle_t lock;
 } s_ctx;
 
+static uint16_t ch422g_i2c_address(void)
+{
+    const uint16_t addr = (uint16_t)(CONFIG_CH422G_I2C_ADDRESS & 0x7FU);
+    return (addr >= 0x08U && addr <= 0x77U) ? addr : 0x24U;
+}
+
 static esp_err_t ch422g_write_outputs(void)
 {
     if (!s_ctx.io_ready)
@@ -41,7 +46,7 @@ static esp_err_t ch422g_write_outputs(void)
 
     const uint8_t payload = s_ctx.outputs;
     esp_err_t err = ESP_FAIL;
-    const esp_err_t lock_err = i2c_bus_shared_lock(pdMS_TO_TICKS(CH422G_I2C_TIMEOUT_MS));
+    const esp_err_t lock_err = i2c_bus_lock(pdMS_TO_TICKS(CH422G_I2C_TIMEOUT_MS));
     if (lock_err != ESP_OK)
     {
         ESP_LOGW(TAG, "CH422G I2C lock failed: %s", esp_err_to_name(lock_err));
@@ -67,7 +72,12 @@ static esp_err_t ch422g_write_outputs(void)
         s_ctx.io_ready = false;
     }
 
-    i2c_bus_shared_unlock();
+    i2c_bus_unlock();
+
+    ESP_LOGD(TAG, "EXIO state updated: EXIO6(LCD_VDD_EN)=%d EXIO2(DISP/BL)=%d raw=0x%02X",
+             (s_ctx.outputs & EXIO6_BIT) ? 1 : 0,
+             (s_ctx.outputs & EXIO2_BIT) ? 1 : 0,
+             s_ctx.outputs);
 
     return err;
 }
@@ -117,7 +127,13 @@ esp_err_t ch422g_init(void)
 
     ESP_RETURN_ON_ERROR(i2c_bus_shared_init(), TAG, "Failed to init shared I2C bus");
 
-    ESP_RETURN_ON_ERROR(i2c_bus_shared_add_device(IOEXT_I2C_ADDRESS, i2c_bus_shared_default_speed_hz(), &s_ctx.dev), TAG, "Failed to add CH422G to shared bus");
+    const uint16_t configured_addr = (uint16_t)(CONFIG_CH422G_I2C_ADDRESS & 0x7FU);
+    const uint16_t i2c_addr = ch422g_i2c_address();
+    if (i2c_addr != configured_addr)
+    {
+        ESP_LOGW(TAG, "Configured CH422G address 0x%02X is out of range; using 0x%02X", configured_addr, i2c_addr);
+    }
+    ESP_RETURN_ON_ERROR(i2c_bus_shared_add_device(i2c_addr, i2c_bus_shared_default_speed_hz(), &s_ctx.dev), TAG, "Failed to add CH422G to shared bus");
     s_ctx.io_ready = true;
 
     if (!s_ctx.lock)
@@ -143,7 +159,7 @@ esp_err_t ch422g_init(void)
     }
 
     s_ctx.initialized = true;
-    ESP_LOGI(TAG, "IO extension ready on addr 0x%02X", IOEXT_I2C_ADDRESS);
+    ESP_LOGI(TAG, "IO extension ready on addr 0x%02X", i2c_addr);
     return ESP_OK;
 }
 
@@ -154,11 +170,13 @@ bool ch422g_is_available(void)
 
 esp_err_t ch422g_set_backlight(bool on)
 {
+    ESP_LOGI(TAG, "Set EXIO2 (DISP/backlight) -> %s", on ? "HIGH" : "LOW");
     return ch422g_set_output_bit(EXIO2_BIT, on);
 }
 
 esp_err_t ch422g_set_lcd_power(bool on)
 {
+    ESP_LOGI(TAG, "Set EXIO6 (LCD_VDD_EN) -> %s", on ? "HIGH" : "LOW");
     return ch422g_set_output_bit(EXIO6_BIT, on);
 }
 

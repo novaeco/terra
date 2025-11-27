@@ -42,6 +42,9 @@ CONFIG_LV_TICK_CUSTOM=n
 # Ensure panic handler prints a backtrace before rebooting (avoid silent rst:0xc loops)
 CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
 
+# IO expander default I2C address (CH422G / CH32V003)
+CONFIG_CH422G_I2C_ADDRESS=0x24
+
 # SDSPI fallback pins (used only if the CH422G IO extension is unavailable)
 CONFIG_SDCARD_SPI_MOSI_GPIO=11
 CONFIG_SDCARD_SPI_MISO_GPIO=13

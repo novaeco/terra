@@ -22,6 +22,21 @@ static lv_obj_t *brightness_switch = NULL;
 static lv_obj_t *battery_label = NULL;
 static lv_obj_t *charge_label = NULL;
 static lv_timer_t *system_timer = NULL;
+static lv_obj_t *i2c_status_label = NULL;
+static lv_obj_t *ch422g_status_label = NULL;
+static lv_obj_t *gt911_status_label = NULL;
+static lv_obj_t *touch_status_label = NULL;
+
+static void set_status_label(lv_obj_t *label, const char *prefix, bool ok)
+{
+    if (!label)
+    {
+        return;
+    }
+
+    lv_label_set_text_fmt(label, "%s : %s", prefix, ok ? "OK" : "KO");
+    lv_obj_set_style_text_color(label, ok ? lv_color_hex(0x4CAF50) : lv_color_hex(0xF44336), LV_PART_MAIN);
+}
 
 static void apply_backlight_level(uint8_t percent)
 {
@@ -176,6 +191,23 @@ lv_obj_t *system_panel_create(void)
     lv_obj_add_style(charge_label, lv_theme_custom_style_label(), LV_PART_MAIN);
     lv_label_set_text(charge_label, "Charge : --");
 
+    lv_obj_t *io_section = create_section(screen, "Bus & tactile");
+    i2c_status_label = lv_label_create(io_section);
+    lv_obj_add_style(i2c_status_label, lv_theme_custom_style_label(), LV_PART_MAIN);
+    lv_label_set_text(i2c_status_label, "I2C : inconnu");
+
+    ch422g_status_label = lv_label_create(io_section);
+    lv_obj_add_style(ch422g_status_label, lv_theme_custom_style_label(), LV_PART_MAIN);
+    lv_label_set_text(ch422g_status_label, "CH422G : inconnu");
+
+    gt911_status_label = lv_label_create(io_section);
+    lv_obj_add_style(gt911_status_label, lv_theme_custom_style_label(), LV_PART_MAIN);
+    lv_label_set_text(gt911_status_label, "GT911 : inconnu");
+
+    touch_status_label = lv_label_create(io_section);
+    lv_obj_add_style(touch_status_label, lv_theme_custom_style_label(), LV_PART_MAIN);
+    lv_label_set_text(touch_status_label, "Tactile : inconnu");
+
     refresh_system_info(NULL);
 
     if (!system_timer)
@@ -185,5 +217,22 @@ lv_obj_t *system_panel_create(void)
 
     apply_backlight_level(80);
 
+    set_status_label(i2c_status_label, "I2C", false);
+    set_status_label(ch422g_status_label, "CH422G", false);
+    set_status_label(gt911_status_label, "GT911", false);
+    set_status_label(touch_status_label, "Tactile", false);
+
     return screen;
+}
+
+void system_panel_set_bus_status(bool i2c_ok, bool ch422g_ok, bool gt911_ok)
+{
+    set_status_label(i2c_status_label, "I2C", i2c_ok);
+    set_status_label(ch422g_status_label, "CH422G", ch422g_ok);
+    set_status_label(gt911_status_label, "GT911", gt911_ok);
+}
+
+void system_panel_set_touch_status(bool touch_ok)
+{
+    set_status_label(touch_status_label, "Tactile", touch_ok);
 }

@@ -8,6 +8,7 @@
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ch422g.h"
@@ -30,6 +31,8 @@
 #define GT911_I2C_TIMEOUT_MS           i2c_bus_shared_timeout_ms()
 #define GT911_I2C_RETRIES              3
 #define GT911_I2C_RETRY_DELAY_MS       3
+#define GT911_INIT_RETRIES             3
+#define GT911_INIT_RETRY_DELAY_MS      120
 #define GT911_REG_COMMAND              0x8040
 #define GT911_REG_CONFIG               0x8047
 #define GT911_REG_CONFIG_CHECKSUM      0x80FF
@@ -73,8 +76,16 @@ static lv_indev_t *s_indev = NULL;
 static gt911_point_t s_last_point;
 static bool s_initialized = false;
 static i2c_master_dev_handle_t s_dev = NULL;
+static bool s_touch_available = false;
 
 static void gt911_configure_int_pin(void);
+static esp_err_t gt911_bus_init(void);
+static esp_err_t gt911_hw_reset(void);
+static esp_err_t gt911_software_reset(void);
+static bool gt911_log_identity(void);
+static esp_err_t gt911_update_config(void);
+static esp_err_t gt911_register_lvgl_device(lv_display_t *disp);
+static esp_err_t gt911_run_init_sequence(lv_display_t *disp);
 
 static void gt911_int_drive_low(void)
 {
@@ -114,6 +125,7 @@ static void gt911_disable(const char *reason, esp_err_t err)
     ESP_LOGE(TAG, "GT911 disabled after %s (%s); touch will be unavailable", reason, esp_err_to_name(err));
     s_dev = NULL;
     s_initialized = false;
+    s_touch_available = false;
 }
 
 static esp_err_t gt911_retry_write_to_device(const uint8_t *payload, size_t length)
@@ -125,7 +137,7 @@ static esp_err_t gt911_retry_write_to_device(const uint8_t *payload, size_t leng
 
     esp_err_t err = ESP_FAIL;
     const TickType_t lock_ticks = pdMS_TO_TICKS(GT911_I2C_TIMEOUT_MS);
-    err = i2c_bus_shared_lock(lock_ticks);
+    err = i2c_bus_lock(lock_ticks);
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "GT911 I2C lock failed: %s", esp_err_to_name(err));
@@ -149,7 +161,7 @@ static esp_err_t gt911_retry_write_to_device(const uint8_t *payload, size_t leng
         vTaskDelay(pdMS_TO_TICKS(GT911_I2C_RETRY_DELAY_MS));
     }
 
-    i2c_bus_shared_unlock();
+    i2c_bus_unlock();
 
     return err;
 }
@@ -163,7 +175,7 @@ static esp_err_t gt911_retry_write_read(const uint8_t *write_buf, size_t write_l
 
     esp_err_t err = ESP_FAIL;
     const TickType_t lock_ticks = pdMS_TO_TICKS(GT911_I2C_TIMEOUT_MS);
-    err = i2c_bus_shared_lock(lock_ticks);
+    err = i2c_bus_lock(lock_ticks);
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "GT911 I2C lock failed: %s", esp_err_to_name(err));
@@ -189,7 +201,7 @@ static esp_err_t gt911_retry_write_read(const uint8_t *write_buf, size_t write_l
         vTaskDelay(pdMS_TO_TICKS(GT911_I2C_RETRY_DELAY_MS));
     }
 
-    i2c_bus_shared_unlock();
+    i2c_bus_unlock();
 
     return err;
 }
@@ -370,7 +382,7 @@ static bool gt911_log_identity(void)
                  GT911_I2C_RETRIES,
                  esp_err_to_name(id_err),
                  esp_err_to_name(vendor_err));
-        vTaskDelay(pdMS_TO_TICKS(GT911_I2C_RETRY_DELAY_MS));
+        vTaskDelay(pdMS_TO_TICKS(GT911_INIT_RETRY_DELAY_MS));
     }
 
     if (err == ESP_OK)
@@ -505,6 +517,75 @@ static esp_err_t gt911_update_config(void)
     return ESP_OK;
 }
 
+static esp_err_t gt911_register_lvgl_device(lv_display_t *disp)
+{
+    lv_display_t *target_disp = disp ? disp : lv_display_get_default();
+    if (target_disp == NULL)
+    {
+        ESP_LOGE(TAG, "No default LVGL display; skipping GT911 input device registration");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (s_indev == NULL)
+    {
+        s_indev = lv_indev_create();
+        if (s_indev == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to create LVGL input device");
+            s_initialized = false;
+            return ESP_ERR_NO_MEM;
+        }
+
+        lv_indev_set_type(s_indev, LV_INDEV_TYPE_POINTER);
+        lv_indev_set_read_cb(s_indev, gt911_lvgl_read);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "Reusing existing GT911 LVGL input device (%p)", (void *)s_indev);
+    }
+
+    lv_indev_set_display(s_indev, target_disp);
+    ESP_LOGI(TAG, "Binding GT911 to LVGL display %p", (void *)target_disp);
+    return ESP_OK;
+}
+
+static esp_err_t gt911_run_init_sequence(lv_display_t *disp)
+{
+    esp_err_t err = gt911_bus_init();
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to initialize I2C bus for GT911");
+        return err;
+    }
+
+    const esp_err_t reset_err = gt911_hw_reset();
+    if (reset_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Hardware reset via CH422G failed (%s); attempting GT911 software reset", esp_err_to_name(reset_err));
+        const esp_err_t sw_reset_err = gt911_software_reset();
+        if (sw_reset_err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "GT911 software reset also failed (%s)", esp_err_to_name(sw_reset_err));
+        }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(80));
+
+    const bool identity_ok = gt911_log_identity();
+    if (!identity_ok)
+    {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    err = gt911_update_config();
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    return gt911_register_lvgl_device(disp);
+}
+
 /*
  * Fixes:
  * - Enforce LVGL display availability before registering the GT911 input device by requiring
@@ -531,62 +612,44 @@ esp_err_t gt911_init(lv_display_t *disp)
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t err = gt911_bus_init();
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to initialize I2C bus for GT911");
-        return err;
-    }
+    s_touch_available = false;
 
-    const esp_err_t reset_err = gt911_hw_reset();
-    if (reset_err != ESP_OK)
+    esp_err_t last_err = ESP_FAIL;
+    for (int attempt = 1; attempt <= GT911_INIT_RETRIES; ++attempt)
     {
-        ESP_LOGW(TAG, "Hardware reset via CH422G failed (%s); attempting GT911 software reset", esp_err_to_name(reset_err));
-        const esp_err_t sw_reset_err = gt911_software_reset();
-        if (sw_reset_err != ESP_OK)
+        const int64_t attempt_begin = esp_timer_get_time();
+        ESP_LOGW(TAG, "GT911 init attempt %d/%d", attempt, GT911_INIT_RETRIES);
+
+        last_err = gt911_run_init_sequence(disp);
+
+        const int64_t elapsed_ms = (esp_timer_get_time() - attempt_begin) / 1000;
+        if (last_err == ESP_OK)
         {
-            ESP_LOGE(TAG, "GT911 software reset also failed (%s)", esp_err_to_name(sw_reset_err));
+            s_initialized = true;
+            s_touch_available = true;
+            ESP_LOGI(TAG, "GT911 ready in %lld ms (attempt %d): %ux%u, report %u Hz",
+                     (long long)elapsed_ms,
+                     attempt,
+                     GT911_RESOLUTION_X,
+                     GT911_RESOLUTION_Y,
+                     GT911_REPORT_RATE_HZ);
+            break;
+        }
+
+        ESP_LOGW(TAG, "GT911 init attempt %d failed in %lld ms: %s", attempt, (long long)elapsed_ms, esp_err_to_name(last_err));
+
+        if (attempt < GT911_INIT_RETRIES)
+        {
+            vTaskDelay(pdMS_TO_TICKS(GT911_INIT_RETRY_DELAY_MS));
         }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(50));
-    const bool identity_ok = gt911_log_identity();
-    if (!identity_ok)
+    if (!s_touch_available)
     {
-        gt911_disable("ID read failures", ESP_ERR_INVALID_RESPONSE);
-        return ESP_ERR_INVALID_RESPONSE;
+        gt911_disable("init retries exhausted", last_err);
+        return last_err;
     }
 
-    if (gt911_update_config() != ESP_OK)
-    {
-        gt911_disable("configuration update failure", ESP_ERR_INVALID_RESPONSE);
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-
-    ESP_LOGI(TAG, "GT911 ready: %ux%u, report %u Hz", GT911_RESOLUTION_X, GT911_RESOLUTION_Y, GT911_REPORT_RATE_HZ);
-
-    lv_display_t *target_disp = disp ? disp : lv_display_get_default();
-    if (target_disp == NULL)
-    {
-        ESP_LOGE(TAG, "No default LVGL display; skipping GT911 input device registration");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    ESP_LOGI(TAG, "Binding GT911 to LVGL display %p", (void *)target_disp);
-
-    s_indev = lv_indev_create();
-    if (s_indev == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to create LVGL input device");
-        s_initialized = false;
-        return ESP_ERR_NO_MEM;
-    }
-
-    lv_indev_set_type(s_indev, LV_INDEV_TYPE_POINTER);
-    lv_indev_set_read_cb(s_indev, gt911_lvgl_read);
-    lv_indev_set_display(s_indev, target_disp);
-
-    s_initialized = true;
     ESP_LOGI(TAG, "GT911 touch initialized; LVGL input device registered");
 
     return ESP_OK;
@@ -595,6 +658,11 @@ esp_err_t gt911_init(lv_display_t *disp)
 bool gt911_is_initialized(void)
 {
     return s_initialized;
+}
+
+bool gt911_touch_available(void)
+{
+    return s_touch_available;
 }
 
 lv_indev_t *gt911_get_input_device(void)

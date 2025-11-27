@@ -41,6 +41,13 @@ static lv_obj_t *logs_alert = NULL;
 static bool s_degraded = false;
 static bool s_ui_ready = false;
 static int64_t s_ui_init_start_us = 0;
+static struct
+{
+    bool i2c_ok;
+    bool ch422g_ok;
+    bool gt911_ok;
+    bool touch_available;
+} s_hw_status = {0};
 
 #define UI_INIT_YIELD() vTaskDelay(pdMS_TO_TICKS(1))
 
@@ -124,6 +131,12 @@ static void update_degraded_alerts(void)
     set_alert_visibility(dashboard_alert, s_degraded);
     set_alert_visibility(system_alert, s_degraded);
     set_alert_visibility(logs_alert, s_degraded);
+}
+
+static void update_status_indicators(void)
+{
+    system_panel_set_bus_status(s_hw_status.i2c_ok, s_hw_status.ch422g_ok, s_hw_status.gt911_ok);
+    system_panel_set_touch_status(s_hw_status.touch_available);
 }
 
 static lv_obj_t *get_nav_button_for_screen(lv_obj_t *screen)
@@ -249,6 +262,33 @@ void ui_manager_set_degraded(bool degraded)
     }
 }
 
+void ui_manager_set_bus_status(bool i2c_ok, bool ch422g_ok, bool gt911_ok)
+{
+    s_hw_status.i2c_ok = i2c_ok;
+    s_hw_status.ch422g_ok = ch422g_ok;
+    s_hw_status.gt911_ok = gt911_ok;
+
+    if (s_ui_ready)
+    {
+        update_status_indicators();
+    }
+}
+
+void ui_manager_set_touch_available(bool available)
+{
+    s_hw_status.touch_available = available;
+
+    if (s_ui_ready)
+    {
+        update_status_indicators();
+    }
+}
+
+bool ui_manager_touch_available(void)
+{
+    return s_hw_status.touch_available;
+}
+
 esp_err_t ui_manager_init_step1_theme(void)
 {
     if (s_ui_ready)
@@ -322,6 +362,7 @@ esp_err_t ui_manager_init_step3_finalize(void)
 
     s_ui_ready = true;
     update_degraded_alerts();
+    update_status_indicators();
 
     set_active_nav_button(dashboard_nav_button);
 

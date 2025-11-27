@@ -1,6 +1,14 @@
 menu "Application Configuration"
 
-config ENABLE_GT911
+config ENABLE_DISPLAY
+    bool "Enable RGB display bring-up"
+    default y
+    help
+        Control initialization of the RGB display pipeline. Disable only for
+        headless diagnostics; the UI manager expects a display in normal
+        builds.
+
+config ENABLE_TOUCH
     bool "Enable GT911 touch controller"
     default y
     help
@@ -22,9 +30,9 @@ config I2C_SCAN_AT_BOOT
         If enabled, probe all addresses on the shared I2C bus during boot
         for diagnostics.
 
-config UI_SMOKE_TEST
+config UI_SMOKE_MODE
     bool "Enable LVGL smoke-test overlay"
-    default n
+    default y
     help
         When enabled, create a simple LVGL overlay with a centered label
         ("LVGL OK") to validate the render pipeline independently of the

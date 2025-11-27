@@ -22,7 +22,7 @@
  *   invalid display binding during indev creation.
  * - The touch stack now defends against those scenarios by short-circuiting
  *   when LVGL or the target display is unavailable, and by letting callers
- *   disable the LVGL attachment entirely (CONFIG_ENABLE_GT911=0) without
+ *   disable the LVGL attachment entirely (CONFIG_ENABLE_TOUCH=0) without
  *   panicking.
  */
 
@@ -514,8 +514,8 @@ static esp_err_t gt911_update_config(void)
 
 esp_err_t gt911_init(lv_display_t *disp)
 {
-#if !CONFIG_ENABLE_GT911
-    ESP_LOGW(TAG, "GT911 integration disabled at compile time (CONFIG_ENABLE_GT911=0); skipping init");
+#if !CONFIG_ENABLE_TOUCH
+    ESP_LOGW(TAG, "GT911 integration disabled at compile time (CONFIG_ENABLE_TOUCH=0); skipping init");
     return ESP_ERR_NOT_SUPPORTED;
 #endif
 

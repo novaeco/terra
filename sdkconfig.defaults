@@ -50,6 +50,8 @@ CONFIG_SDCARD_SPI_CS_GPIO=10
 
 # Storage options
 # Disable SD card by default for UI-only testing; set to y to re-enable storage
+CONFIG_ENABLE_DISPLAY=y
 CONFIG_ENABLE_SDCARD=n
-CONFIG_ENABLE_GT911=y
+CONFIG_ENABLE_TOUCH=y
 CONFIG_I2C_SCAN_AT_BOOT=n
+CONFIG_UI_SMOKE_MODE=y

@@ -44,6 +44,8 @@ static const char *TAG = "MAIN";
 static const char *TAG_LVGL = "LVGL";
 
 static void app_init_task(void *arg);
+static void log_build_info(void);
+static void log_option_state(void);
 static void lvgl_task(void *arg);
 static void lvgl_runtime_start(lv_display_t *disp);
 static void ui_create_smoke_screen(void);
@@ -67,6 +69,25 @@ static inline void stage_end(const char *stage, int64_t start_ts)
 {
     int64_t elapsed_ms = (esp_timer_get_time() - start_ts) / 1000;
     ESP_LOGI(TAG_INIT, "%s done in %lld ms", stage, (long long)elapsed_ms);
+}
+
+static void log_build_info(void)
+{
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+
+    ESP_LOGI(TAG_INIT, "ESP-IDF %s", esp_get_idf_version());
+    ESP_LOGI(TAG_INIT, "Chip model %d, %d core(s), revision %d", chip_info.model, chip_info.cores, chip_info.revision);
+}
+
+static void log_option_state(void)
+{
+    ESP_LOGI(TAG_INIT, "Options: display=%d, touch=%d, sdcard=%d, i2c_scan=%d, ui_smoke=%d",
+             CONFIG_ENABLE_DISPLAY,
+             CONFIG_ENABLE_TOUCH,
+             CONFIG_ENABLE_SDCARD,
+             CONFIG_I2C_SCAN_AT_BOOT,
+             CONFIG_UI_SMOKE_MODE);
 }
 
 // Reset loop root-cause (panic reason=4) was LVGL tick double-counting when CONFIG_LV_TICK_CUSTOM=1
@@ -243,12 +264,9 @@ static void app_init_task(void *arg)
     bool storage_available = false;
     esp_log_level_set("*", ESP_LOG_INFO);
     ESP_LOGI(TAG, "ESP32-S3 UI phase 4 starting");
+    log_build_info();
+    log_option_state();
     log_reset_diagnostics();
-    INIT_YIELD();
-
-    esp_chip_info_t chip_info;
-    esp_chip_info(&chip_info);
-    ESP_LOGI(TAG, "Chip model %d, %d core(s), revision %d", chip_info.model, chip_info.cores, chip_info.revision);
     INIT_YIELD();
 
     esp_err_t ch_err = ch422g_init();
@@ -372,7 +390,7 @@ static void app_init_task(void *arg)
     // Yield after synchronous storage probing so IDLE tasks can run before touch and the rest.
     vTaskDelay(pdMS_TO_TICKS(1));
 
-#if CONFIG_ENABLE_GT911
+#if CONFIG_ENABLE_TOUCH
     ESP_LOGI(TAG, "Before GT911 init (display %s)", disp ? "ready" : "missing");
     logs_panel_add_log("Init GT911 en cours");
     esp_err_t touch_err = gt911_init(disp);
@@ -388,8 +406,8 @@ static void app_init_task(void *arg)
         ESP_LOGI(TAG, "GT911 successfully attached to LVGL (touch enabled)");
     }
 #else
-    ESP_LOGW(TAG, "GT911 disabled at compile-time (CONFIG_ENABLE_GT911=0); skipping touch attachment");
-    logs_panel_add_log("GT911 désactivé (CONFIG_ENABLE_GT911=0)");
+    ESP_LOGW(TAG, "GT911 disabled at compile-time (CONFIG_ENABLE_TOUCH=0); skipping touch attachment");
+    logs_panel_add_log("GT911 désactivé (CONFIG_ENABLE_TOUCH=0)");
     degraded_mode = true;
     ui_manager_set_degraded(true);
 #endif
@@ -451,6 +469,11 @@ static void app_init_task(void *arg)
         lv_obj_invalidate(lv_screen_active());
     }
 
+    ESP_LOGI(TAG_INIT, "Phase 1 done: display=%s, touch=%s, sdcard=%s",
+             lv_disp_get_default() ? "ready" : "missing",
+             gt911_is_initialized() ? "ready" : "disabled",
+             storage_available ? "mounted" : "absent");
+
     log_heap_metrics("post-init");
 
     vTaskDelete(NULL);
@@ -497,7 +520,14 @@ static void lvgl_runtime_start(lv_display_t *disp)
             else
             {
                 ESP_LOGI(TAG_LVGL, "tick started (1ms)");
-                ui_create_smoke_screen();
+                if (CONFIG_UI_SMOKE_MODE)
+                {
+                    ui_create_smoke_screen();
+                }
+                else
+                {
+                    ESP_LOGI(TAG_LVGL, "LVGL smoke-test overlay disabled (CONFIG_UI_SMOKE_MODE=0)");
+                }
             }
         }
     }

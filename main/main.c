@@ -467,6 +467,15 @@ static void app_init_task(void *arg)
             ESP_LOGI(TAG, "LVGL tick alive=%" PRIu32 " immediately after start", lvgl_tick_alive_count());
         }
 
+        if (lvgl_runtime_wait_started(500))
+        {
+            ESP_LOGI(TAG, "LVGL handler task confirmed running; creating smoke UI");
+        }
+        else
+        {
+            ESP_LOGW(TAG, "LVGL handler task not confirmed after 500 ms; continuing");
+        }
+
         ui_smoke_boot_screen();
         lv_timer_handler();
         ui_smoke_init(disp);

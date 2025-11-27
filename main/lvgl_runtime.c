@@ -7,6 +7,7 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 #include "rgb_lcd.h"
 #include "ui_manager.h"
@@ -16,6 +17,7 @@ static const char *TAG = "LVGL_RUN";
 static esp_timer_handle_t s_lvgl_tick_timer = NULL;
 static TaskHandle_t s_lvgl_task_handle = NULL;
 static _Atomic uint32_t s_tick_cb_count = 0;
+static SemaphoreHandle_t s_lvgl_start_sem = NULL;
 
 static void lvgl_tick_cb(void *arg)
 {
@@ -28,6 +30,11 @@ static void lvgl_task(void *arg)
 {
     (void)arg;
     ESP_LOGI(TAG, "LVGL task started (core=%d, period=%d ms)", xPortGetCoreID(), CONFIG_LVGL_HANDLER_PERIOD_MS);
+
+    if (s_lvgl_start_sem)
+    {
+        xSemaphoreGive(s_lvgl_start_sem);
+    }
 
     TickType_t last_heartbeat = xTaskGetTickCount();
     int64_t last_log_us = esp_timer_get_time();
@@ -106,7 +113,13 @@ esp_err_t lvgl_runtime_start(lv_display_t *disp)
 
     if (s_lvgl_task_handle == NULL)
     {
-        ESP_LOGI(TAG, "Creating LVGL task on core %d", 1);
+        if (s_lvgl_start_sem == NULL)
+        {
+            s_lvgl_start_sem = xSemaphoreCreateBinary();
+        }
+
+        const BaseType_t core = (portNUM_PROCESSORS > 1) ? 1 : tskNO_AFFINITY;
+        ESP_LOGI(TAG, "Creating LVGL task on core %ld", (long)core);
         const BaseType_t lvgl_ok = xTaskCreatePinnedToCore(
             lvgl_task,
             "lvgl",
@@ -114,7 +127,7 @@ esp_err_t lvgl_runtime_start(lv_display_t *disp)
             NULL,
             6,
             &s_lvgl_task_handle,
-            1);
+            core);
 
         if (lvgl_ok != pdPASS)
         {
@@ -133,5 +146,21 @@ esp_err_t lvgl_runtime_start(lv_display_t *disp)
 uint32_t lvgl_tick_alive_count(void)
 {
     return atomic_load_explicit(&s_tick_cb_count, memory_order_relaxed);
+}
+
+bool lvgl_runtime_wait_started(uint32_t timeout_ms)
+{
+    if (s_lvgl_task_handle == NULL || s_lvgl_start_sem == NULL)
+    {
+        return false;
+    }
+
+    const TickType_t ticks = pdMS_TO_TICKS(timeout_ms);
+    if (xSemaphoreTake(s_lvgl_start_sem, ticks) == pdTRUE)
+    {
+        return true;
+    }
+
+    return false;
 }
 

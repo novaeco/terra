@@ -97,7 +97,7 @@ esp_err_t i2c_bus_shared_add_device(uint16_t address,
     return i2c_master_bus_add_device(s_bus, &dev_cfg, ret_handle);
 }
 
-esp_err_t i2c_bus_shared_lock(TickType_t ticks_to_wait)
+esp_err_t i2c_bus_lock(TickType_t ticks_to_wait)
 {
     if (s_bus_lock == NULL)
     {
@@ -112,7 +112,7 @@ esp_err_t i2c_bus_shared_lock(TickType_t ticks_to_wait)
     return ESP_OK;
 }
 
-void i2c_bus_shared_unlock(void)
+void i2c_bus_unlock(void)
 {
     if (s_bus_lock)
     {

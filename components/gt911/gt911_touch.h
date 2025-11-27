@@ -16,6 +16,7 @@ extern "C" {
  */
 esp_err_t gt911_init(lv_display_t *disp);
 bool gt911_is_initialized(void);
+bool gt911_touch_available(void);
 
 /**
  * @brief Access the registered LVGL input device (NULL if not initialized).

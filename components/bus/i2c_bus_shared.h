@@ -40,8 +40,21 @@ esp_err_t i2c_bus_shared_add_device(uint16_t address,
 /**
  * @brief Lock/unlock the shared I2C bus for thread-safe access.
  */
-esp_err_t i2c_bus_shared_lock(TickType_t ticks_to_wait);
-void i2c_bus_shared_unlock(void);
+esp_err_t i2c_bus_lock(TickType_t ticks_to_wait);
+void i2c_bus_unlock(void);
+
+/**
+ * @brief Backwards-compatible helpers (use i2c_bus_lock / i2c_bus_unlock instead).
+ */
+static inline esp_err_t i2c_bus_shared_lock(TickType_t ticks_to_wait)
+{
+    return i2c_bus_lock(ticks_to_wait);
+}
+
+static inline void i2c_bus_shared_unlock(void)
+{
+    i2c_bus_unlock();
+}
 
 #ifdef __cplusplus
 }

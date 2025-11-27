@@ -51,6 +51,7 @@ static void lvgl_task(void *arg);
 static void lvgl_runtime_start(lv_display_t *disp);
 static void exio4_toggle_selftest(void);
 static void log_storage_state(bool storage_available);
+static void publish_hw_status(bool i2c_ok, bool ch422g_ok, bool gt911_ok, bool touch_available);
 
 #define INIT_YIELD()            \
     do {                        \
@@ -156,7 +157,7 @@ static void i2c_scan_bus(i2c_master_bus_handle_t bus)
 
     ESP_LOGI(TAG, "I2C scan on shared bus");
     logs_panel_add_log("Scan I2C sur bus partagé");
-    const esp_err_t lock_err = i2c_bus_shared_lock(pdMS_TO_TICKS(i2c_bus_shared_timeout_ms()));
+    const esp_err_t lock_err = i2c_bus_lock(pdMS_TO_TICKS(i2c_bus_shared_timeout_ms()));
     if (lock_err != ESP_OK)
     {
         ESP_LOGW(TAG, "I2C scan lock failed: %s", esp_err_to_name(lock_err));
@@ -181,7 +182,7 @@ static void i2c_scan_bus(i2c_master_bus_handle_t bus)
         }
     }
 
-    i2c_bus_shared_unlock();
+    i2c_bus_unlock();
 
     if (devices == 0)
     {
@@ -202,6 +203,12 @@ static void log_storage_state(bool storage_available)
 {
     ESP_LOGI(TAG, "storage_available=%d", storage_available ? 1 : 0);
     logs_panel_add_log("Stockage externe: %s", storage_available ? "disponible" : "absent");
+}
+
+static void publish_hw_status(bool i2c_ok, bool ch422g_ok, bool gt911_ok, bool touch_available)
+{
+    ui_manager_set_bus_status(i2c_ok, ch422g_ok, gt911_ok);
+    ui_manager_set_touch_available(touch_available);
 }
 
 static inline void log_non_fatal_error(const char *what, esp_err_t err)
@@ -257,12 +264,31 @@ static void app_init_task(void *arg)
 
     bool degraded_mode = false;
     bool storage_available = false;
+    bool i2c_ok = false;
+    bool ch422g_ok = false;
+    bool gt911_ok = false;
+    bool touch_available = false;
     esp_log_level_set("*", ESP_LOG_INFO);
     ESP_LOGI(TAG, "ESP32-S3 UI phase 4 starting");
     log_build_info();
     log_option_state();
     log_reset_diagnostics();
     INIT_YIELD();
+
+    esp_err_t i2c_err = i2c_bus_shared_init();
+    if (i2c_err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Shared I2C bus init failed: %s", esp_err_to_name(i2c_err));
+        logs_panel_add_log("I2C partagé: échec (%s)", esp_err_to_name(i2c_err));
+        degraded_mode = true;
+        ui_manager_set_degraded(true);
+    }
+    else
+    {
+        i2c_ok = true;
+        logs_panel_add_log("I2C partagé: prêt");
+    }
+    publish_hw_status(i2c_ok, ch422g_ok, gt911_ok, touch_available);
 
     esp_err_t ch_err = ch422g_init();
     if (ch_err != ESP_OK)
@@ -271,9 +297,17 @@ static void app_init_task(void *arg)
         degraded_mode = true;
         ui_manager_set_degraded(true);
     }
+    else
+    {
+        ch422g_ok = ch422g_is_available();
+    }
+    publish_hw_status(i2c_ok, ch422g_ok, gt911_ok, touch_available);
     INIT_YIELD();
 
-    i2c_scan_bus(i2c_bus_shared_handle());
+    if (i2c_ok)
+    {
+        i2c_scan_bus(i2c_bus_shared_handle());
+    }
     INIT_YIELD();
 
     if (ch422g_is_available())
@@ -391,19 +425,30 @@ static void app_init_task(void *arg)
     {
         ESP_LOGW(TAG, "GT911 init failed (%s); input device not registered", esp_err_to_name(touch_err));
         logs_panel_add_log("GT911: init échouée (%s), tactile indisponible", esp_err_to_name(touch_err));
+        touch_available = gt911_touch_available();
         degraded_mode = true;
         ui_manager_set_degraded(true);
     }
     else
     {
+        gt911_ok = true;
+        touch_available = gt911_touch_available();
         ESP_LOGI(TAG, "GT911 successfully attached to LVGL (touch enabled)");
     }
 #else
     ESP_LOGW(TAG, "GT911 disabled at compile-time (CONFIG_ENABLE_TOUCH=0); skipping touch attachment");
     logs_panel_add_log("GT911 désactivé (CONFIG_ENABLE_TOUCH=0)");
+    touch_available = false;
     degraded_mode = true;
     ui_manager_set_degraded(true);
 #endif
+    publish_hw_status(i2c_ok, ch422g_ok, gt911_ok, touch_available);
+    ESP_LOGI(TAG_INIT, "I2C ok=%d, CH422G ok=%d, GT911 ok=%d, touch_available=%d",
+             i2c_ok,
+             ch422g_ok,
+             gt911_ok,
+             touch_available);
+    logs_panel_add_log("État bus: I2C=%d CH422G=%d GT911=%d", i2c_ok, ch422g_ok, gt911_ok);
     ESP_LOGI(TAG, "After GT911 init, proceeding with peripherals");
 
     // Avoid monopolizing CPU0 around synchronous peripheral inits.

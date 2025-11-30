@@ -60,6 +60,14 @@ static void publish_hw_status(bool i2c_ok, bool ch422g_ok, bool gt911_ok, bool t
 #if CONFIG_ENABLE_CAN
 static void can_rx_task(void *arg);
 #endif
+static void log_active_screen_state(const char *stage);
+
+typedef struct
+{
+    lv_display_t *disp;
+    const system_status_t *status_ref;
+    esp_err_t result;
+} ui_init_ctx_t;
 
 #define INIT_YIELD()            \
     do {                        \
@@ -76,6 +84,51 @@ static inline void stage_end(const char *stage, int64_t start_ts)
 {
     int64_t elapsed_ms = (esp_timer_get_time() - start_ts) / 1000;
     ESP_LOGI(TAG_INIT, "%s done in %lld ms", stage, (long long)elapsed_ms);
+}
+
+static void log_active_screen_state(const char *stage)
+{
+    lv_display_t *disp = lv_disp_get_default();
+    lv_obj_t *screen = lv_screen_active();
+    const uint32_t children = screen ? lv_obj_get_child_cnt(screen) : 0;
+
+    ESP_LOGI(TAG, "%s: default_disp=%p screen=%p children=%u", stage, (void *)disp, (void *)screen, (unsigned)children);
+}
+
+static void lvgl_create_smoke_cb(void *arg)
+{
+    lv_display_t *disp = (lv_display_t *)arg;
+    ui_smoke_boot_screen();
+    ui_smoke_init(disp);
+    log_active_screen_state("SMOKE_INIT");
+}
+
+static void lvgl_load_fallback_cb(void *arg)
+{
+    (void)arg;
+    ui_smoke_fallback();
+    log_active_screen_state("SMOKE_FALLBACK");
+}
+
+static void lvgl_ui_manager_init_cb(void *arg)
+{
+    ui_init_ctx_t *ctx = (ui_init_ctx_t *)arg;
+    ctx->result = ui_manager_init(ctx->disp, ctx->status_ref);
+    log_active_screen_state("UI_MANAGER_INIT");
+}
+
+static void lvgl_diag_screen_cb(void *arg)
+{
+    (void)arg;
+    ui_smoke_diag_screen();
+    log_active_screen_state("SMOKE_DIAG");
+}
+
+static void lvgl_post_ui_cb(void *arg)
+{
+    (void)arg;
+    log_active_screen_state("UI_POST_INIT");
+    lv_obj_invalidate(lv_screen_active());
 }
 
 static void log_build_info(void)
@@ -473,12 +526,21 @@ static void app_init_task(void *arg)
         }
 
 #if CONFIG_DIAG_LVGL_SOLID_SCREEN
-        ui_smoke_diag_screen();
+        (void)lvgl_runtime_dispatch(lvgl_load_fallback_cb, NULL, true);
+        esp_err_t smoke_err = lvgl_runtime_dispatch(lvgl_create_smoke_cb, disp, true);
+        if (smoke_err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to build smoke UI on LVGL task (%s)", esp_err_to_name(smoke_err));
+        }
+        (void)lvgl_runtime_dispatch(lvgl_diag_screen_cb, NULL, true);
 #else
-        ui_smoke_boot_screen();
+        esp_err_t smoke_err = lvgl_runtime_dispatch(lvgl_create_smoke_cb, disp, true);
+        if (smoke_err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to build smoke UI on LVGL task (%s)", esp_err_to_name(smoke_err));
+            (void)lvgl_runtime_dispatch(lvgl_load_fallback_cb, NULL, true);
+        }
 #endif
-        lv_timer_handler();
-        ui_smoke_init(disp);
     }
 
 #if CONFIG_ENABLE_SDCARD
@@ -633,7 +695,14 @@ static void app_init_task(void *arg)
     ESP_LOGI(TAG, "Init peripherals step 6: ui_manager_init()");
     ESP_LOGI(TAG, "UI: entrypoint called: ui_manager_init");
     int64_t t_ui = stage_begin("ui_manager_init");
-    esp_err_t ui_err = ui_manager_init(disp, system_status_get_ref());
+    ui_init_ctx_t ui_ctx = {
+        .disp = disp,
+        .status_ref = system_status_get_ref(),
+        .result = ESP_FAIL,
+    };
+
+    esp_err_t ui_dispatch_err = lvgl_runtime_dispatch(lvgl_ui_manager_init_cb, &ui_ctx, true);
+    esp_err_t ui_err = (ui_dispatch_err == ESP_OK) ? ui_ctx.result : ui_dispatch_err;
     stage_end("ui_manager_init", t_ui);
 
     if (ui_err != ESP_OK)
@@ -641,6 +710,7 @@ static void app_init_task(void *arg)
         log_non_fatal_error("UI manager init", ui_err);
         degraded_mode = true;
         ui_manager_set_mode(UI_MODE_DEGRADED_TOUCH);
+        (void)lvgl_runtime_dispatch(lvgl_load_fallback_cb, NULL, true);
     }
     else
     {
@@ -653,8 +723,7 @@ static void app_init_task(void *arg)
             update_ui_mode_from_status();
         }
         ESP_LOGI(TAG, "MAIN: ui init done");
-        ESP_LOGI(TAG, "MAIN: active screen=%p", (void *)lv_scr_act());
-        lv_obj_invalidate(lv_scr_act());
+        (void)lvgl_runtime_dispatch(lvgl_post_ui_cb, NULL, true);
     }
 
     ESP_LOGI(TAG_INIT, "Phase 1 done: display=%s, touch=%s, sdcard=%s",

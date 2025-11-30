@@ -450,10 +450,6 @@ static void app_init_task(void *arg)
         lv_display_set_default(disp);
         ESP_LOGI(TAG, "MAIN: default LVGL display set to %p", (void *)disp);
 
-#if CONFIG_DIAG_RGB_TESTPATTERN
-        rgb_lcd_draw_test_pattern();
-#endif
-
         const int64_t t_lvgl_runtime = stage_begin("lvgl_runtime_start");
         esp_err_t lvgl_start_err = lvgl_runtime_start(disp);
         stage_end("lvgl_runtime_start", t_lvgl_runtime);
@@ -476,7 +472,11 @@ static void app_init_task(void *arg)
             ESP_LOGW(TAG, "LVGL handler task not confirmed after 500 ms; continuing");
         }
 
+#if CONFIG_DIAG_LVGL_SOLID_SCREEN
+        ui_smoke_diag_screen();
+#else
         ui_smoke_boot_screen();
+#endif
         lv_timer_handler();
         ui_smoke_init(disp);
     }

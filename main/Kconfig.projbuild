@@ -47,6 +47,15 @@ config DIAG_RGB_TESTPATTERN
         after the RGB panel is initialized. This bypasses LVGL to validate the
         panel wiring and timing. Leave disabled for normal UI bring-up.
 
+config DIAG_LVGL_SOLID_SCREEN
+    bool "Force LVGL solid red screen with OK label"
+    default y
+    help
+        When enabled, load a diagnostic LVGL screen with a bright red
+        background, a centered "LVGL OK" label, and a green rectangle in the
+        top-left corner immediately after the LVGL task starts. Use this to
+        validate the LVGL -> flush -> RGB pipeline before enabling the full UI.
+
 config LVGL_TICK_PERIOD_US
     int "LVGL esp_timer tick period (µs)"
     range 500 5000

@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 
 #include "rgb_lcd.h"
 #include "ui_manager.h"
@@ -23,6 +24,14 @@ static _Atomic uint32_t s_tick_cb_count = 0;
 static _Atomic uint32_t s_handler_count = 0;
 static _Atomic bool s_lvgl_started = false;
 static SemaphoreHandle_t s_lvgl_start_sem = NULL;
+static QueueHandle_t s_lvgl_work_queue = NULL;
+
+typedef struct
+{
+    lvgl_work_cb_t cb;
+    void *arg;
+    SemaphoreHandle_t done;
+} lvgl_work_item_t;
 
 static void lvgl_tick_cb(void *arg)
 {
@@ -49,6 +58,23 @@ static void lvgl_task(void *arg)
 
     for (;;)
     {
+        if (s_lvgl_work_queue)
+        {
+            lvgl_work_item_t item;
+            while (xQueueReceive(s_lvgl_work_queue, &item, 0) == pdTRUE)
+            {
+                if (item.cb)
+                {
+                    item.cb(item.arg);
+                }
+
+                if (item.done)
+                {
+                    xSemaphoreGive(item.done);
+                }
+            }
+        }
+
         lv_timer_handler();
         atomic_fetch_add_explicit(&s_handler_count, 1, memory_order_relaxed);
         vTaskDelay(pdMS_TO_TICKS(CONFIG_LVGL_HANDLER_PERIOD_MS));
@@ -119,6 +145,16 @@ esp_err_t lvgl_runtime_start(lv_display_t *disp)
         ESP_LOGW(TAG, "LVGL tick timer already created; skipping");
     }
 
+    if (s_lvgl_work_queue == NULL)
+    {
+        s_lvgl_work_queue = xQueueCreate(8, sizeof(lvgl_work_item_t));
+        if (s_lvgl_work_queue == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to create LVGL work queue");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
     if (s_lvgl_task_handle == NULL)
     {
         if (s_lvgl_start_sem == NULL)
@@ -161,6 +197,58 @@ esp_err_t lvgl_runtime_start(lv_display_t *disp)
 uint32_t lvgl_tick_alive_count(void)
 {
     return atomic_load_explicit(&s_tick_cb_count, memory_order_relaxed);
+}
+
+esp_err_t lvgl_runtime_dispatch(lvgl_work_cb_t cb, void *arg, bool wait)
+{
+    if (cb == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (s_lvgl_work_queue == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    SemaphoreHandle_t done_sem = NULL;
+    lvgl_work_item_t item = {
+        .cb = cb,
+        .arg = arg,
+        .done = NULL,
+    };
+
+    if (wait)
+    {
+        done_sem = xSemaphoreCreateBinary();
+        if (done_sem == NULL)
+        {
+            return ESP_ERR_NO_MEM;
+        }
+        item.done = done_sem;
+    }
+
+    if (xQueueSend(s_lvgl_work_queue, &item, pdMS_TO_TICKS(50)) != pdTRUE)
+    {
+        if (done_sem)
+        {
+            vSemaphoreDelete(done_sem);
+        }
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if (wait && done_sem)
+    {
+        const TickType_t ticks = pdMS_TO_TICKS(500);
+        const BaseType_t ok = xSemaphoreTake(done_sem, ticks);
+        vSemaphoreDelete(done_sem);
+        if (ok != pdTRUE)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
+    }
+
+    return ESP_OK;
 }
 
 bool lvgl_runtime_wait_started(uint32_t timeout_ms)

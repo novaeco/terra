@@ -15,6 +15,7 @@ static lv_timer_t *s_timer = NULL;
 static uint32_t s_counter = 0;
 
 static lv_obj_t *s_diag_screen = NULL;
+static lv_obj_t *s_fallback_screen = NULL;
 
 static void ui_smoke_timer_cb(lv_timer_t *timer)
 {
@@ -49,27 +50,20 @@ void ui_smoke_init(lv_display_t *disp)
     }
 
     s_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x203040), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x2A2A2A), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_100, LV_PART_MAIN);
 
-    lv_obj_t *banner = lv_obj_create(s_screen);
-    lv_obj_set_size(banner, lv_pct(100), 60);
-    lv_obj_set_style_bg_color(banner, lv_color_hex(0xFFD166), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(banner, LV_OPA_100, LV_PART_MAIN);
-    lv_obj_set_style_border_width(banner, 0, LV_PART_MAIN);
-    lv_obj_align(banner, LV_ALIGN_BOTTOM_MID, 0, 0);
-
     s_label = lv_label_create(s_screen);
-    lv_label_set_text(s_label, "LVGL OK 0");
+    lv_label_set_text(s_label, "UIperso: LVGL OK");
     lv_obj_set_style_text_color(s_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_text_opa(s_label, LV_OPA_100, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_label, LV_FONT_DEFAULT, LV_PART_MAIN);
     lv_obj_center(s_label);
 
-    s_flush_label = lv_label_create(banner);
+    s_flush_label = lv_label_create(s_screen);
     lv_label_set_text(s_flush_label, "flush=0");
-    lv_obj_set_style_text_color(s_flush_label, lv_color_hex(0x1A1A1A), LV_PART_MAIN);
-    lv_obj_align(s_flush_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_color(s_flush_label, lv_color_hex(0xE5E5E5), LV_PART_MAIN);
+    lv_obj_align(s_flush_label, LV_ALIGN_BOTTOM_MID, 0, -16);
 
     lv_screen_load(s_screen);
 
@@ -82,7 +76,7 @@ void ui_smoke_init(lv_display_t *disp)
         }
     }
 
-    ESP_LOGI(TAG_SMOKE, "SMOKE UI ready");
+    ESP_LOGI(TAG_SMOKE, "SMOKE UI ready (children=%u)", (unsigned)lv_obj_get_child_cnt(s_screen));
 }
 
 void ui_smoke_boot_screen(void)
@@ -143,4 +137,26 @@ void ui_smoke_diag_screen(void)
     s_diag_screen = screen;
     lv_screen_load(s_diag_screen);
     ESP_LOGI(TAG_SMOKE, "Diag screen created (red bg + green rect)");
+}
+
+void ui_smoke_fallback(void)
+{
+    if (s_fallback_screen == NULL)
+    {
+        s_fallback_screen = lv_obj_create(NULL);
+        lv_obj_clear_flag(s_fallback_screen, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_bg_color(s_fallback_screen, lv_color_hex(0x2A2A2A), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_fallback_screen, LV_OPA_100, LV_PART_MAIN);
+
+        lv_obj_t *label = lv_label_create(s_fallback_screen);
+        lv_label_set_text(label, "UIperso: LVGL OK");
+        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+        lv_obj_set_style_text_font(label, LV_FONT_DEFAULT, LV_PART_MAIN);
+        lv_obj_center(label);
+
+        ESP_LOGI(TAG_SMOKE, "Fallback smoke screen prepared (children=%u)", (unsigned)lv_obj_get_child_cnt(s_fallback_screen));
+    }
+
+    lv_screen_load(s_fallback_screen);
+    ESP_LOGI(TAG_SMOKE, "Fallback smoke screen loaded");
 }

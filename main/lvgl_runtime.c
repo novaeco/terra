@@ -1,8 +1,11 @@
 #include "lvgl_runtime.h"
 
+#include <inttypes.h>
+#include <stdbool.h>
 #include <stdatomic.h>
 
 #include "esp_log.h"
+#include "esp_err.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
@@ -17,6 +20,8 @@ static const char *TAG = "LVGL_RUN";
 static esp_timer_handle_t s_lvgl_tick_timer = NULL;
 static TaskHandle_t s_lvgl_task_handle = NULL;
 static _Atomic uint32_t s_tick_cb_count = 0;
+static _Atomic uint32_t s_handler_count = 0;
+static _Atomic bool s_lvgl_started = false;
 static SemaphoreHandle_t s_lvgl_start_sem = NULL;
 
 static void lvgl_tick_cb(void *arg)
@@ -29,12 +34,14 @@ static void lvgl_tick_cb(void *arg)
 static void lvgl_task(void *arg)
 {
     (void)arg;
-    ESP_LOGI(TAG, "LVGL task started (core=%d, period=%d ms)", xPortGetCoreID(), CONFIG_LVGL_HANDLER_PERIOD_MS);
+    ESP_LOGI(TAG, "LVGL_RUN: lvgl task started (core=%d, period=%d ms)", xPortGetCoreID(), CONFIG_LVGL_HANDLER_PERIOD_MS);
 
     if (s_lvgl_start_sem)
     {
         xSemaphoreGive(s_lvgl_start_sem);
     }
+
+    atomic_store_explicit(&s_lvgl_started, true, memory_order_release);
 
     TickType_t last_heartbeat = xTaskGetTickCount();
     int64_t last_log_us = esp_timer_get_time();
@@ -43,6 +50,7 @@ static void lvgl_task(void *arg)
     for (;;)
     {
         lv_timer_handler();
+        atomic_fetch_add_explicit(&s_handler_count, 1, memory_order_relaxed);
         vTaskDelay(pdMS_TO_TICKS(CONFIG_LVGL_HANDLER_PERIOD_MS));
 
         const int64_t now_us = esp_timer_get_time();
@@ -56,8 +64,8 @@ static void lvgl_task(void *arg)
             const size_t heap_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
             const size_t heap_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
 
-            ESP_LOGI(TAG, "tick_alive=%" PRIu32 " (+%" PRIu32 "/s) flush/s=%" PRIu32 " heap_i=%u heap_psram=%u",
-                     ticks, tick_delta, flush_delta, (unsigned)heap_internal, (unsigned)heap_psram);
+            ESP_LOGI(TAG, "LVGL_RUN: handler loop alive tick_alive=%" PRIu32 " (+%" PRIu32 "/s) handler_calls=%" PRIu32 " flush/s=%" PRIu32 " heap_i=%u heap_psram=%u",
+                     ticks, tick_delta, atomic_load_explicit(&s_handler_count, memory_order_relaxed), flush_delta, (unsigned)heap_internal, (unsigned)heap_psram);
 
             ui_manager_tick_1s();
 
@@ -116,6 +124,11 @@ esp_err_t lvgl_runtime_start(lv_display_t *disp)
         if (s_lvgl_start_sem == NULL)
         {
             s_lvgl_start_sem = xSemaphoreCreateBinary();
+            if (s_lvgl_start_sem == NULL)
+            {
+                ESP_LOGE(TAG, "Failed to create LVGL start semaphore");
+                return ESP_ERR_NO_MEM;
+            }
         }
 
         const BaseType_t core = (portNUM_PROCESSORS > 1) ? 1 : tskNO_AFFINITY;
@@ -134,6 +147,8 @@ esp_err_t lvgl_runtime_start(lv_display_t *disp)
             ESP_LOGE(TAG, "Failed to create LVGL task (%ld)", (long)lvgl_ok);
             return ESP_FAIL;
         }
+
+        ESP_LOGI(TAG, "LVGL_RUN: lvgl task creation scheduled (handle=%p, core=%ld)", (void *)s_lvgl_task_handle, (long)core);
     }
     else
     {
@@ -150,6 +165,11 @@ uint32_t lvgl_tick_alive_count(void)
 
 bool lvgl_runtime_wait_started(uint32_t timeout_ms)
 {
+    if (atomic_load_explicit(&s_lvgl_started, memory_order_acquire))
+    {
+        return true;
+    }
+
     if (s_lvgl_task_handle == NULL || s_lvgl_start_sem == NULL)
     {
         return false;
@@ -158,6 +178,7 @@ bool lvgl_runtime_wait_started(uint32_t timeout_ms)
     const TickType_t ticks = pdMS_TO_TICKS(timeout_ms);
     if (xSemaphoreTake(s_lvgl_start_sem, ticks) == pdTRUE)
     {
+        atomic_store_explicit(&s_lvgl_started, true, memory_order_release);
         return true;
     }
 

@@ -1,6 +1,7 @@
 #include "ui_smoke.h"
 
 #include "esp_log.h"
+#include <inttypes.h>
 #include <stdbool.h>
 
 #include "rgb_lcd.h"
@@ -22,12 +23,12 @@ static void ui_smoke_timer_cb(lv_timer_t *timer)
 
     if (s_label)
     {
-        lv_label_set_text_fmt(s_label, "LVGL OK %lu", (unsigned long)s_counter);
+        lv_label_set_text_fmt(s_label, "LVGL OK %" PRIu32, s_counter);
     }
 
     if (s_flush_label)
     {
-        lv_label_set_text_fmt(s_flush_label, "flush=%lu", (unsigned long)flush);
+        lv_label_set_text_fmt(s_flush_label, "flush=%" PRIu32, flush);
     }
 }
 

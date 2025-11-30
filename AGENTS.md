@@ -18,6 +18,19 @@ Tu es un agent de contribution code (Codex). Ta mission: livrer des changements 
 3) Éviter les changements massifs non demandés (refacto large, renommages).
 4) Pas de secrets en dur (SSID/mots de passe/tokens).
 
+## Check-list avant commit
+- `idf.py set-target esp32s3`
+- `idf.py fullclean`
+- `idf.py build`
+- Scan secrets (aucun identifiant sensible)
+- Formatage conforme aux hooks IDF/clang-format (si applicable)
+
+## Environnement outillé
+- Version ESP-IDF attendue: 6.1 (vérifier `idf.py --version`)
+- Python: version compatible IDF 6.1, venv propre; re-créer le venv en cas d’erreurs de dépendances
+- En cas d’artefacts étranges: `idf.py fullclean` et purge des caches CMake/ccache avant rebuild
+- Pinout/timings: se référer aux schémas ou fichiers de conf existants (source de vérité du repo)
+
 ## Commandes standard (Windows PowerShell)
 Build propre:
 - idf.py set-target esp32s3

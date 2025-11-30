@@ -14,6 +14,8 @@ static lv_obj_t *s_flush_label = NULL;
 static lv_timer_t *s_timer = NULL;
 static uint32_t s_counter = 0;
 
+static lv_obj_t *s_diag_screen = NULL;
+
 static void ui_smoke_timer_cb(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
@@ -110,4 +112,35 @@ void ui_smoke_boot_screen(void)
 
     ESP_LOGI(TAG_SMOKE, "UI: smoke screen created");
     boot_screen_created = true;
+}
+
+void ui_smoke_diag_screen(void)
+{
+    if (s_diag_screen)
+    {
+        lv_screen_load(s_diag_screen);
+        ESP_LOGI(TAG_SMOKE, "Diag screen reused");
+        return;
+    }
+
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0xFF0022), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_100, LV_PART_MAIN);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *label = lv_label_create(screen);
+    lv_label_set_text(label, "LVGL OK");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_center(label);
+
+    lv_obj_t *rect = lv_obj_create(screen);
+    lv_obj_set_size(rect, 120, 80);
+    lv_obj_set_style_bg_color(rect, lv_color_hex(0x00A000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(rect, LV_OPA_100, LV_PART_MAIN);
+    lv_obj_set_style_border_width(rect, 0, LV_PART_MAIN);
+    lv_obj_align(rect, LV_ALIGN_TOP_LEFT, 10, 10);
+
+    s_diag_screen = screen;
+    lv_screen_load(s_diag_screen);
+    ESP_LOGI(TAG_SMOKE, "Diag screen created (red bg + green rect)");
 }

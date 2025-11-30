@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sdkconfig.h"
+
 #include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
@@ -85,10 +87,37 @@ static void rgb_lcd_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px
         return;
     }
 
-    const int32_t x1 = area->x1;
-    const int32_t y1 = area->y1;
-    const int32_t x2 = area->x2 + 1;
-    const int32_t y2 = area->y2 + 1;
+    int32_t x1 = area->x1;
+    int32_t y1 = area->y1;
+    int32_t x2 = area->x2 + 1;
+    int32_t y2 = area->y2 + 1;
+
+    if (x1 < 0)
+    {
+        x1 = 0;
+    }
+    if (y1 < 0)
+    {
+        y1 = 0;
+    }
+    if (x2 > LCD_H_RES)
+    {
+        x2 = LCD_H_RES;
+    }
+    if (y2 > LCD_V_RES)
+    {
+        y2 = LCD_V_RES;
+    }
+
+    const int32_t w = x2 - x1;
+    const int32_t h = y2 - y1;
+
+    if (w <= 0 || h <= 0)
+    {
+        ESP_LOGW(TAG, "flush skipped: invalid area after clamp (%ldx%ld)", (long)w, (long)h);
+        lv_display_flush_ready(disp);
+        return;
+    }
 
     const uint16_t *buf16 = (const uint16_t *)px_map;
     const esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel_handle, x1, y1, x2, y2, buf16);
@@ -100,11 +129,16 @@ static void rgb_lcd_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px
     atomic_fetch_add_explicit(&s_flush_count, 1, memory_order_relaxed);
     s_flush_count_window++;
 
-    if (!s_first_flush_logged)
+    if (!s_first_flush_logged || s_flush_count_window <= 3)
     {
-        ESP_LOGI(TAG_LVGL, "first flush");
-        s_first_flush_logged = true;
-        s_last_flush_log_us = esp_timer_get_time();
+        ESP_LOGI(TAG_LVGL, "flush called: area=(%ld,%ld)-(%ld,%ld) size=%ldx%ld buf=%p", (long)x1, (long)y1, (long)(x2 - 1),
+                 (long)(y2 - 1), (long)w, (long)h, (void *)px_map);
+        if (!s_first_flush_logged)
+        {
+            ESP_LOGI(TAG_LVGL, "first flush");
+            s_first_flush_logged = true;
+            s_last_flush_log_us = esp_timer_get_time();
+        }
     }
 
     const int64_t now_us = esp_timer_get_time();
@@ -243,6 +277,8 @@ void rgb_lcd_init(void)
     ESP_LOGI(TAG, "RGB timing: pclk=%lu Hz hsync pw/back/front=%u/%u/%u vsync pw/back/front=%u/%u/%u", (unsigned long)timing.pclk_hz,
              timing.hsync_pulse_width, timing.hsync_back_porch, timing.hsync_front_porch,
              timing.vsync_pulse_width, timing.vsync_back_porch, timing.vsync_front_porch);
+    ESP_LOGI(TAG, "RGB config: data_width=%u bpp=%u fb_in_psram=%d bounce_px=%u", panel_config.data_width, panel_config.bits_per_pixel,
+             panel_config.flags.fb_in_psram, panel_config.bounce_buffer_size_px);
 
     esp_err_t err = esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle);
     if (err != ESP_OK)
@@ -296,7 +332,11 @@ void rgb_lcd_init(void)
     lv_display_set_flush_cb(s_disp, rgb_lcd_flush);
     lv_display_set_default(s_disp);
 
+    ESP_LOGI(TAG, "LVGL display: color=RGB565 render=PARTIAL buf_bytes=%u buf_lines=%d", (unsigned)buf_size, LVGL_DRAW_BUF_LINES);
+
+#if CONFIG_DIAG_RGB_TESTPATTERN
     rgb_lcd_draw_test_pattern();
+#endif
 
     const int64_t elapsed_ms = (esp_timer_get_time() - t_start) / 1000;
     ESP_LOGI(TAG, "RGB panel initialized (%dx%d) in %lld ms", LCD_H_RES, LCD_V_RES, (long long)elapsed_ms);

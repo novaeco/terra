@@ -8,6 +8,11 @@
 
 static const char *TAG = "app";
 
+static void anim_set_x_cb(void *obj, int32_t v)
+{
+    lv_obj_set_x((lv_obj_t *)obj, v);
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "JC1060P470C bring-up");
@@ -48,9 +53,7 @@ void app_main(void)
     lv_anim_set_time(&a, 2000);
     lv_anim_set_playback_time(&a, 2000);
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_exec_cb(&a, [](void *obj, int32_t v) {
-        lv_obj_set_x((lv_obj_t *)obj, v);
-    });
+    lv_anim_set_exec_cb(&a, anim_set_x_cb);
     lv_anim_start(&a);
 
     ESP_LOGI(TAG, "Init complete");

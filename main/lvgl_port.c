@@ -9,7 +9,12 @@
 static const char *TAG = "lvgl";
 static lv_disp_t *s_disp = NULL;
 
-static bool lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
+static void lvgl_tick_cb(void *arg)
+{
+    lv_tick_inc(5);
+}
+
+static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
     esp_lcd_panel_handle_t panel = (esp_lcd_panel_handle_t)drv->user_data;
     int32_t x1 = area->x1, y1 = area->y1;
@@ -17,7 +22,6 @@ static bool lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     int32_t h = area->y2 - area->y1 + 1;
     esp_lcd_panel_draw_bitmap(panel, x1, y1, x1 + w, y1 + h, color_map);
     lv_disp_flush_ready(drv);
-    return true;
 }
 
 esp_err_t lvgl_port_init(esp_lcd_panel_handle_t panel, lv_disp_t **out_disp)
@@ -47,9 +51,7 @@ esp_err_t lvgl_port_init(esp_lcd_panel_handle_t panel, lv_disp_t **out_disp)
 
     // Tick source
     const esp_timer_create_args_t periodic_timer_args = {
-        .callback = [](void *arg) {
-            lv_tick_inc(5);
-        },
+        .callback = lvgl_tick_cb,
         .name = "lvgl_tick"
     };
     esp_timer_handle_t periodic_timer;

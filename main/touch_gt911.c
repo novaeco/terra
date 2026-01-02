@@ -126,12 +126,12 @@ esp_err_t touch_gt911_init(touch_gt911_handle_t *out, lv_disp_t *disp)
     }
     gt911_init_chip();
 
-    static lv_indev_drv_t indev_drv;
-    lv_indev_drv_init(&indev_drv);
+    static lv_indev_data_t indev_drv;
+    lv_fs_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = lvgl_touch_cb;
     indev_drv.disp = disp;
-    lv_indev_t *indev = lv_indev_drv_register(&indev_drv);
+    lv_indev_t *indev = lv_fs_drv_register(&indev_drv);
     if (out) {
         memset(out, 0, sizeof(*out));
         out->indev = indev;

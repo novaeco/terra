@@ -17,6 +17,11 @@
 #define BOARD_PIN_TOUCH_RST    GPIO_NUM_10   // IO10
 #define BOARD_PIN_TOUCH_INT    GPIO_NUM_11   // IO11
 
+// UART0 console (bloc JC-ESP32P4-M3, HW_NOTES)
+#define BOARD_PIN_UART0_TX     GPIO_NUM_43
+#define BOARD_PIN_UART0_RX     GPIO_NUM_44
+#define BOARD_PIN_BOOT_MODE    GPIO_NUM_9    // partagé avec SDA tactile, strap bas pour boot normal
+
 esp_err_t board_init_pins(void);
 esp_err_t board_backlight_on(void);
 esp_err_t board_backlight_off(void);

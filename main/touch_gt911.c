@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "driver/i2c.h"
 #include <string.h>
+#include <stdbool.h>
 
 static const char *TAG = "gt911";
 static uint8_t i2c_addr = 0x5D; // will be updated by scan
@@ -28,14 +29,18 @@ static esp_err_t gt911_i2c_write(uint16_t reg, const uint8_t *data, size_t len)
     return ESP_OK;
 }
 
-static void gt911_scan_i2c(void)
+static esp_err_t gt911_scan_i2c(void)
 {
     ESP_LOGI(TAG, "I2C scan start (SCL=%d SDA=%d)", BOARD_PIN_TOUCH_SCL, BOARD_PIN_TOUCH_SDA);
     uint8_t found = 0;
+    bool found_gt911 = false;
     for (int addr = 1; addr < 127; ++addr) {
         if (i2c_master_write_to_device(I2C_NUM_0, addr, NULL, 0, pdMS_TO_TICKS(10)) == ESP_OK) {
             ESP_LOGI(TAG, "I2C device at 0x%02X", addr);
             found++;
+            if (addr == 0x5D || addr == 0x14) {
+                found_gt911 = true;
+            }
         }
     }
     if (!found) {
@@ -48,6 +53,11 @@ static void gt911_scan_i2c(void)
         i2c_addr = 0x14;
     }
     ESP_LOGI(TAG, "GT911 address selected 0x%02X", i2c_addr);
+    if (!found_gt911) {
+        ESP_LOGE(TAG, "GT911 absent du bus I2C (adresses 0x5D/0x14 non répondues)");
+        return ESP_ERR_NOT_FOUND;
+    }
+    return ESP_OK;
 }
 
 static esp_err_t gt911_init_chip(void)
@@ -111,7 +121,9 @@ esp_err_t touch_gt911_init(touch_gt911_handle_t *out, lv_disp_t *disp)
     gpio_set_direction(BOARD_PIN_TOUCH_RST, GPIO_MODE_OUTPUT);
     gpio_set_direction(BOARD_PIN_TOUCH_INT, GPIO_MODE_INPUT);
 
-    gt911_scan_i2c();
+    if (gt911_scan_i2c() != ESP_OK) {
+        return ESP_ERR_NOT_FOUND;
+    }
     gt911_init_chip();
 
     static lv_indev_drv_t indev_drv;
@@ -121,7 +133,18 @@ esp_err_t touch_gt911_init(touch_gt911_handle_t *out, lv_disp_t *disp)
     indev_drv.disp = disp;
     lv_indev_t *indev = lv_indev_drv_register(&indev_drv);
     if (out) {
+        memset(out, 0, sizeof(*out));
         out->indev = indev;
+        out->max_points = 5; // GT911 supporte jusqu'à 5 points
+        out->initialized = true;
+        uint8_t product_id[4] = {0};
+        if (gt911_i2c_read(0x8140, product_id, sizeof(product_id)) == ESP_OK) {
+            memcpy(out->product_id, product_id, sizeof(product_id));
+            out->product_id[4] = '\0';
+        } else {
+            memcpy(out->product_id, "----", 4);
+            out->product_id[4] = '\0';
+        }
     }
     return ESP_OK;
 }

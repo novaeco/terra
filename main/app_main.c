@@ -5,6 +5,10 @@
 #include "display_jd9165.h"
 #include "lvgl_port.h"
 #include "touch_gt911.h"
+#include <string.h>
+#include "esp_err.h"
+#include "esp_chip_info.h"
+#include "esp_psram.h"
 
 static const char *TAG = "app";
 
@@ -35,7 +39,23 @@ void app_main(void)
     lvgl_port_task_start();
 
     touch_gt911_handle_t touch;
-    touch_gt911_init(&touch, disp);
+    memset(&touch, 0, sizeof(touch));
+    esp_err_t touch_err = touch_gt911_init(&touch, disp);
+    if (touch_err != ESP_OK) {
+        ESP_LOGE(TAG, "Initialisation GT911 échouée (%s)", esp_err_to_name(touch_err));
+    }
+
+    esp_chip_info_t chip_info = {0};
+    esp_chip_info(&chip_info);
+    const size_t psram_size = esp_psram_get_size();
+    ESP_LOGI(TAG, "SoC: ESP32-P4, cœurs=%d, révision=%d, PSRAM=%u bytes", chip_info.cores, chip_info.revision, (unsigned int)psram_size);
+    ESP_LOGI(TAG, "LCD JD9165 %dx%d (DSI 2 lanes) RST=%d STBYB=%d BL_EN=%d BL_PWM=%d", BOARD_LCD_H_RES, BOARD_LCD_V_RES, BOARD_PIN_LCD_RST, BOARD_PIN_LCD_STBYB, BOARD_PIN_BL_EN, BOARD_PIN_BL_PWM);
+    ESP_LOGI(TAG, "Tactile GT911 bus I2C SDA=%d SCL=%d RST=%d INT=%d BOOT/strap=%d UART0 TX=%d RX=%d", BOARD_PIN_TOUCH_SDA, BOARD_PIN_TOUCH_SCL, BOARD_PIN_TOUCH_RST, BOARD_PIN_TOUCH_INT, BOARD_PIN_BOOT_MODE, BOARD_PIN_UART0_TX, BOARD_PIN_UART0_RX);
+    if (touch.initialized) {
+        ESP_LOGI(TAG, "GT911 détecté ID=%s, points max=%u", touch.product_id, touch.max_points);
+    } else {
+        ESP_LOGW(TAG, "GT911 non initialisé (aucune info ID disponible)");
+    }
 
     // Demo UI
     lv_obj_t *scr = lv_disp_get_scr_act(disp);

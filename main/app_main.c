@@ -88,7 +88,7 @@ void app_main(void)
 
     board_backlight_on();
 
-    lv_disp_t *disp = NULL;
+    lv_display_t *disp = NULL;
     lvgl_port_init(panel, &disp);
     lvgl_port_task_start();
 
@@ -112,7 +112,7 @@ void app_main(void)
     }
 
     // UI structurée
-    lv_obj_t *scr = lv_disp_get_scr_act(disp);
+    lv_obj_t *scr = lv_display_get_screen_active(disp);
     lv_obj_set_style_bg_color(scr, lv_color_hex(0xf5f5f5), LV_PART_MAIN);
 
     lv_obj_t *root = lv_obj_create(scr);

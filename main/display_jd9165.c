@@ -3,6 +3,7 @@
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_io.h"
+#include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -18,71 +19,70 @@ static const char *TAG = "jd9165";
 #define VBP 21
 #define VFP 12
 
-static esp_err_t jd9165_send_cmds(esp_lcd_panel_handle_t panel, const esp_lcd_panel_io_tx_param_t *cmds, size_t cmds_len)
+typedef struct {
+    uint8_t cmd;
+    const uint8_t *data;
+    size_t data_bytes;
+} jd9165_cmd_t;
+
+static esp_err_t jd9165_send_cmds(esp_lcd_panel_io_handle_t io, const jd9165_cmd_t *cmds, size_t cmds_len)
 {
     for (size_t i = 0; i < cmds_len; i++) {
-        const esp_lcd_panel_io_tx_param_t *c = &cmds[i];
+        const jd9165_cmd_t *c = &cmds[i];
         if (c->data == NULL && c->data_bytes == 0) {
             vTaskDelay(pdMS_TO_TICKS(120));
             continue;
         }
-        ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(panel, c->cmd, c->data, c->data_bytes), TAG, "tx failed");
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, c->cmd, c->data, c->data_bytes), TAG, "tx failed");
     }
     return ESP_OK;
 }
 
 esp_err_t display_jd9165_init(esp_lcd_panel_handle_t *out_panel)
 {
-    // Panel IO over DSI
+    esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
+    esp_lcd_panel_io_handle_t io_handle = NULL;
+    esp_lcd_panel_handle_t panel_handle = NULL;
+
     esp_lcd_dsi_bus_config_t bus_cfg = {
         .bus_id = 0,
         .num_data_lanes = 2, // from dtsi 0x0B=0x11 (2 lanes)
+        .phy_clk_src = MIPI_DSI_PHY_CLK_SRC_DEFAULT,
+        .lane_bit_rate_mbps = 1000, // align with IDF EK79007 example for 1024x600
     };
-    ESP_LOGI(TAG, "Config DSI lanes=%d", bus_cfg.num_data_lanes);
-    ESP_ERROR_CHECK(esp_lcd_new_mipi_dsi_bus(&bus_cfg));
+    ESP_LOGI(TAG, "Config DSI lanes=%d bitrate=%.1fMbps", bus_cfg.num_data_lanes, (double)bus_cfg.lane_bit_rate_mbps);
+    ESP_RETURN_ON_ERROR(esp_lcd_new_dsi_bus(&bus_cfg, &dsi_bus), TAG, "create DSI bus failed");
 
-    esp_lcd_dpi_panel_config_t dpi_cfg = {
-        .dpi_clk_src = LCD_CLK_SRC_PLL160M,
-        .timings = {
-            .h_res = BOARD_LCD_H_RES,
-            .v_res = BOARD_LCD_V_RES,
-            .hsync_pulse_width = HSYNC,
-            .hsync_back_porch = HBP,
-            .hsync_front_porch = HFP,
-            .vsync_pulse_width = VSYNC,
-            .vsync_back_porch = VBP,
-            .vsync_front_porch = VFP,
-            .pclk_hz = (uint32_t)(DOTCLK_MHZ * 1000000),
-            .flags = {
-                .pclk_active_neg = false,
-                .hsync_idle_low = false,
-                .vsync_idle_low = false,
-                .de_idle_high = true,
-            },
-        },
-        .flags = {
-            .use_dma = true,
-            .fb_in_psram = true,
-        },
-        .bits_per_pixel = 16,
-        .num_fbs = 2,
-    };
-
-    esp_lcd_panel_handle_t panel_handle = NULL;
-    ESP_ERROR_CHECK(esp_lcd_new_dpi_panel(&dpi_cfg, &panel_handle));
-
-    // DCS IO bridge
-    esp_lcd_dsi_panel_io_config_t io_cfg = {
+    esp_lcd_dbi_io_config_t io_cfg = {
         .virtual_channel = 0,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
-        .cca_mode = ESP_LCD_MIPI_CCA_HOST,
     };
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_dsi(&io_cfg, &io_handle));
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_dbi(dsi_bus, &io_cfg, &io_handle), TAG, "create DSI DBI IO failed");
+
+    esp_lcd_dpi_panel_config_t dpi_cfg = {
+        .virtual_channel = 0,
+        .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT,
+        .dpi_clock_freq_mhz = DOTCLK_MHZ,
+        .in_color_format = LCD_COLOR_FMT_RGB565,
+        .out_color_format = LCD_COLOR_FMT_RGB565,
+        .num_fbs = 2,
+        .video_timing = {
+            .h_size = BOARD_LCD_H_RES,
+            .v_size = BOARD_LCD_V_RES,
+            .hsync_back_porch = HBP,
+            .hsync_pulse_width = HSYNC,
+            .hsync_front_porch = HFP,
+            .vsync_back_porch = VBP,
+            .vsync_pulse_width = VSYNC,
+            .vsync_front_porch = VFP,
+        },
+    };
+
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_dpi(dsi_bus, &dpi_cfg, &panel_handle), TAG, "create DPI panel failed");
 
     // Init sequence from dtsi
-    const esp_lcd_panel_io_tx_param_t init_cmds[] = {
+    const jd9165_cmd_t init_cmds[] = {
         { .cmd = 0x30, .data = (uint8_t[]){0x00}, .data_bytes = 1 },
         { .cmd = 0xF7, .data = (uint8_t[]){0x49,0x61,0x02,0x00}, .data_bytes = 4 },
         { .cmd = 0x30, .data = (uint8_t[]){0x01}, .data_bytes = 1 },
@@ -137,8 +137,9 @@ esp_err_t display_jd9165_init(esp_lcd_panel_handle_t *out_panel)
 
     ESP_LOGI(TAG, "Init JD9165 timings hs=%d hbp=%d hfp=%d vs=%d vbp=%d vfp=%d dotclk=%.1fMHz", HSYNC, HBP, HFP, VSYNC, VBP, VFP, DOTCLK_MHZ);
 
-    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-    jd9165_send_cmds(panel_handle, init_cmds, sizeof(init_cmds)/sizeof(init_cmds[0]));
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(panel_handle), TAG, "panel reset failed");
+    ESP_RETURN_ON_ERROR(jd9165_send_cmds(io_handle, init_cmds, sizeof(init_cmds) / sizeof(init_cmds[0])), TAG, "panel init seq failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel_handle), TAG, "panel init failed");
 
     *out_panel = panel_handle;
     return ESP_OK;

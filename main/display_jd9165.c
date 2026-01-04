@@ -5,6 +5,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -34,12 +35,14 @@ static esp_err_t jd9165_send_cmds(esp_lcd_panel_io_handle_t io, const jd9165_cmd
             continue;
         }
         ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, c->cmd, c->data, c->data_bytes), TAG, "tx failed");
+        vTaskDelay(pdMS_TO_TICKS(1)); // yield to avoid starving IDLE during long init
     }
     return ESP_OK;
 }
 
 esp_err_t display_jd9165_init(esp_lcd_panel_handle_t *out_panel)
 {
+    int64_t t0 = esp_timer_get_time();
     esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_handle_t panel_handle = NULL;
@@ -52,6 +55,7 @@ esp_err_t display_jd9165_init(esp_lcd_panel_handle_t *out_panel)
     };
     ESP_LOGI(TAG, "Config DSI lanes=%d bitrate=%.1fMbps", bus_cfg.num_data_lanes, (double)bus_cfg.lane_bit_rate_mbps);
     ESP_RETURN_ON_ERROR(esp_lcd_new_dsi_bus(&bus_cfg, &dsi_bus), TAG, "create DSI bus failed");
+    ESP_LOGI(TAG, "DSI bus ready (%llu us)", (unsigned long long)(esp_timer_get_time() - t0));
 
     esp_lcd_dbi_io_config_t io_cfg = {
         .virtual_channel = 0,
@@ -59,6 +63,7 @@ esp_err_t display_jd9165_init(esp_lcd_panel_handle_t *out_panel)
         .lcd_param_bits = 8,
     };
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_dbi(dsi_bus, &io_cfg, &io_handle), TAG, "create DSI DBI IO failed");
+    ESP_LOGI(TAG, "DSI DBI IO ready (%llu us)", (unsigned long long)(esp_timer_get_time() - t0));
 
     esp_lcd_dpi_panel_config_t dpi_cfg = {
         .virtual_channel = 0,
@@ -80,6 +85,7 @@ esp_err_t display_jd9165_init(esp_lcd_panel_handle_t *out_panel)
     };
 
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_dpi(dsi_bus, &dpi_cfg, &panel_handle), TAG, "create DPI panel failed");
+    ESP_LOGI(TAG, "DPI panel created (%llu us)", (unsigned long long)(esp_timer_get_time() - t0));
 
     // Init sequence from dtsi
     const jd9165_cmd_t init_cmds[] = {
@@ -138,8 +144,11 @@ esp_err_t display_jd9165_init(esp_lcd_panel_handle_t *out_panel)
     ESP_LOGI(TAG, "Init JD9165 timings hs=%d hbp=%d hfp=%d vs=%d vbp=%d vfp=%d dotclk=%.1fMHz", HSYNC, HBP, HFP, VSYNC, VBP, VFP, DOTCLK_MHZ);
 
     ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(panel_handle), TAG, "panel reset failed");
+    ESP_LOGI(TAG, "Panel reset ok (%llu us)", (unsigned long long)(esp_timer_get_time() - t0));
     ESP_RETURN_ON_ERROR(jd9165_send_cmds(io_handle, init_cmds, sizeof(init_cmds) / sizeof(init_cmds[0])), TAG, "panel init seq failed");
+    ESP_LOGI(TAG, "Panel init sequence done (%llu us)", (unsigned long long)(esp_timer_get_time() - t0));
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel_handle), TAG, "panel init failed");
+    ESP_LOGI(TAG, "Panel driver init done (%llu us)", (unsigned long long)(esp_timer_get_time() - t0));
 
     *out_panel = panel_handle;
     return ESP_OK;

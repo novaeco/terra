@@ -87,8 +87,10 @@ static void diag_timer_cb(lv_timer_t *timer)
 
 void app_main(void)
 {
+    uint64_t t_boot_us = esp_timer_get_time();
     ESP_LOGI(TAG, "JC1060P470C bring-up");
     board_init_pins();
+    ESP_LOGI(TAG, "Pins init done in %llu us", (unsigned long long)(esp_timer_get_time() - t_boot_us));
 
     // Reset LCD sequence
     gpio_set_level(BOARD_PIN_LCD_RST, 0);
@@ -97,8 +99,10 @@ void app_main(void)
     gpio_set_level(BOARD_PIN_LCD_RST, 1);
     vTaskDelay(pdMS_TO_TICKS(120));
 
+    ESP_LOGI(TAG, "Start JD9165 init");
     esp_lcd_panel_handle_t panel = NULL;
     display_jd9165_init(&panel);
+    ESP_LOGI(TAG, "JD9165 init done in %llu us", (unsigned long long)(esp_timer_get_time() - t_boot_us));
 
     board_backlight_on();
 
@@ -112,6 +116,7 @@ void app_main(void)
     if (touch_err != ESP_OK) {
         ESP_LOGE(TAG, "Initialisation GT911 échouée (%s)", esp_err_to_name(touch_err));
     }
+    ESP_LOGI(TAG, "GT911 init status=%s after %llu us", esp_err_to_name(touch_err), (unsigned long long)(esp_timer_get_time() - t_boot_us));
 
     esp_chip_info_t chip_info = {0};
     esp_chip_info(&chip_info);

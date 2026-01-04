@@ -1,4 +1,4 @@
-#include "lvgl_port.h"
+#include "app_lvgl_port.h"
 #include "board_jc1060p470c.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"

@@ -20,15 +20,14 @@ typedef struct {
     uint64_t start_us;
 } ui_ctx_t;
 
-static void anim_set_obj_opa(void *var, int32_t v)
+static void anim_exec_set_opa(void *var, int32_t v)
 {
-    lv_obj_t *obj = (lv_obj_t *)var;
-    lv_obj_set_style_opa(obj, (lv_opa_t)v, 0);
+    lv_obj_set_style_opa((lv_obj_t *)var, (lv_opa_t)v, 0);
 }
 
 static void anim_toast_ready_cb(lv_anim_t *a)
 {
-    lv_obj_t *obj = (lv_obj_t *)lv_anim_get_var(a);
+    lv_obj_t *obj = (lv_obj_t *)lv_anim_get_user_data(a);
     if (obj) {
         lv_obj_del(obj);
     }
@@ -48,10 +47,11 @@ static void show_toast(lv_obj_t *parent, const char *msg)
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, toast);
+    lv_anim_set_user_data(&a, toast);
     lv_anim_set_values(&a, 255, 0);
     lv_anim_set_time(&a, 1200);
     lv_anim_set_delay(&a, 500);
-    lv_anim_set_exec_cb(&a, anim_set_obj_opa);
+    lv_anim_set_exec_cb(&a, anim_exec_set_opa);
     lv_anim_set_ready_cb(&a, anim_toast_ready_cb);
     lv_anim_start(&a);
 }

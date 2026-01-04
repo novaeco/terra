@@ -2,6 +2,8 @@
 #include "board_jc1060p470c.h"
 #include "esp_log.h"
 #include "esp_check.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "driver/i2c_master.h"
 #include <string.h>
 #include <stdbool.h>

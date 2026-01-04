@@ -7,6 +7,7 @@ idf_component_register(
         lvgl_port.c
     INCLUDE_DIRS "."
     REQUIRES esp_lcd esp_driver_gpio esp_driver_ledc esp_driver_i2c esp_lvgl_port
+    PRIV_REQUIRES esp_psram esp_timer
 )
 
 target_compile_definitions(${COMPONENT_LIB} PUBLIC LV_CONF_INCLUDE_SIMPLE=1)

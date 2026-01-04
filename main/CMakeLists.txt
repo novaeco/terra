@@ -6,5 +6,7 @@ idf_component_register(
         touch_gt911.c
         lvgl_port.c
     INCLUDE_DIRS "."
-    REQUIRES esp_lcd driver esp_lvgl_port
+    REQUIRES esp_lcd esp_driver_gpio esp_driver_ledc esp_driver_i2c esp_lvgl_port
 )
+
+target_compile_definitions(${COMPONENT_LIB} PUBLIC LV_CONF_INCLUDE_SIMPLE=1)

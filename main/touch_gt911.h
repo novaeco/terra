@@ -11,4 +11,4 @@ typedef struct {
     bool initialized;
 } touch_gt911_handle_t;
 
-esp_err_t touch_gt911_init(touch_gt911_handle_t *out, lv_disp_t *disp);
+esp_err_t touch_gt911_init(touch_gt911_handle_t *out, lv_display_t *disp);

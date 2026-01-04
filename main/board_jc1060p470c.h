@@ -1,7 +1,7 @@
 #pragma once
 #include "esp_err.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 
 #define BOARD_LCD_H_RES 1024
 #define BOARD_LCD_V_RES 600
@@ -25,5 +25,3 @@
 esp_err_t board_init_pins(void);
 esp_err_t board_backlight_on(void);
 esp_err_t board_backlight_off(void);
-
-#endif

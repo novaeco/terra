@@ -20,6 +20,11 @@ typedef struct {
     uint64_t start_us;
 } ui_ctx_t;
 
+static void anim_opa_exec_cb(void *var, int32_t v)
+{
+    lv_obj_set_style_opa((lv_obj_t *)var, (lv_opa_t)v, LV_PART_MAIN);
+}
+
 static void show_toast(lv_obj_t *parent, const char *msg)
 {
     lv_obj_t *toast = lv_label_create(parent);
@@ -37,7 +42,7 @@ static void show_toast(lv_obj_t *parent, const char *msg)
     lv_anim_set_values(&a, 255, 0);
     lv_anim_set_time(&a, 1200);
     lv_anim_set_delay(&a, 500);
-    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_style_opa);
+    lv_anim_set_exec_cb(&a, anim_opa_exec_cb);
     lv_anim_set_ready_cb(&a, (lv_anim_ready_cb_t)lv_obj_del);
     lv_anim_start(&a);
 }
@@ -59,7 +64,7 @@ static void action_btn_event_cb(lv_event_t *e)
 
 static void diag_timer_cb(lv_timer_t *timer)
 {
-    ui_ctx_t *ctx = (ui_ctx_t *)timer->user_data;
+    ui_ctx_t *ctx = (ui_ctx_t *)lv_timer_get_user_data(timer);
     if (!ctx || !ctx->diag_label) {
         return;
     }
@@ -89,8 +94,8 @@ void app_main(void)
     board_backlight_on();
 
     lv_display_t *disp = NULL;
-    lvgl_port_init(panel, &disp);
-    lvgl_port_task_start();
+    app_lvgl_port_init(panel, &disp);
+    app_lvgl_port_task_start();
 
     touch_gt911_handle_t touch;
     memset(&touch, 0, sizeof(touch));
@@ -135,7 +140,15 @@ void app_main(void)
 
     lv_obj_t *title = lv_label_create(header);
     lv_label_set_text_fmt(title, "JC1060P470C • LVGL");
+#if defined(LV_FONT_MONTSERRAT_20) && LV_FONT_MONTSERRAT_20
     lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+#elif defined(LV_FONT_MONTSERRAT_16) && LV_FONT_MONTSERRAT_16
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+#elif defined(LV_FONT_MONTSERRAT_14) && LV_FONT_MONTSERRAT_14
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+#else
+    lv_obj_set_style_text_font(title, LV_FONT_DEFAULT, 0);
+#endif
 
     lv_obj_t *status = lv_label_create(header);
     lv_label_set_text_fmt(status, "LCD %dx%d | Touch %s", BOARD_LCD_H_RES, BOARD_LCD_V_RES, touch.initialized ? "OK" : "NOK");

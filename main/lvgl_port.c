@@ -31,7 +31,7 @@ static bool lvgl_flush_ready_cb(esp_lcd_panel_handle_t panel, esp_lcd_dpi_panel_
     return false;
 }
 
-esp_err_t lvgl_port_init(esp_lcd_panel_handle_t panel, lv_display_t **out_disp)
+esp_err_t app_lvgl_port_init(esp_lcd_panel_handle_t panel, lv_display_t **out_disp)
 {
     const size_t buf_pixels = BOARD_LCD_H_RES * 50; // ~100KB double buffer si 16bpp
     lv_color_t *buf1 = heap_caps_malloc(buf_pixels * sizeof(lv_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -78,7 +78,7 @@ static void lvgl_task(void *arg)
     }
 }
 
-void lvgl_port_task_start(void)
+void app_lvgl_port_task_start(void)
 {
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 4096, NULL, 5, NULL, 0);
 }

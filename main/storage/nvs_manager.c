@@ -40,7 +40,7 @@ int nvs_init(void)
     return 0;
 }
 
-int nvs_get_str(const char *key, char *value, size_t max_len)
+int nvsman_get_str(const char *key, char *value, size_t max_len)
 {
     if (!key || !value || max_len == 0) {
         return -1;
@@ -57,7 +57,7 @@ int nvs_get_str(const char *key, char *value, size_t max_len)
     return -1;
 }
 
-int nvs_set_str(const char *key, const char *value)
+int nvsman_set_str(const char *key, const char *value)
 {
     if (!key || !value) {
         return -1;

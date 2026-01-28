@@ -46,4 +46,6 @@ idf_component_register(
         "security"
         "ota"
         "utils"
+    REQUIRES
+        json
 )

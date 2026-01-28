@@ -17,6 +17,7 @@
 
 #include "esp_wifi.h"
 #include "esp_netif.h"
+#include "esp_netif_ip_addr.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -55,7 +56,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "connect to the AP fail");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "got ip: %s", ip4addr_ntoa(&event->ip_info.ip));
+        char ip_str[IP4ADDR_STRLEN_MAX];
+        esp_ip4addr_ntoa(&event->ip_info.ip, ip_str, sizeof(ip_str));
+        ESP_LOGI(TAG, "got ip: %s", ip_str);
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
@@ -109,8 +112,8 @@ int wifi_init(void)
     wifi_config_t wifi_config = { 0 };
     size_t ssid_len = sizeof(wifi_config.sta.ssid);
     size_t pass_len = sizeof(wifi_config.sta.password);
-    if (nvs_get_str("wifi_ssid", (char *)wifi_config.sta.ssid, ssid_len) != 0 ||
-        nvs_get_str("wifi_pass", (char *)wifi_config.sta.password, pass_len) != 0) {
+    if (nvsman_get_str("wifi_ssid", (char *)wifi_config.sta.ssid, ssid_len) != 0 ||
+        nvsman_get_str("wifi_pass", (char *)wifi_config.sta.password, pass_len) != 0) {
         ESP_LOGW(TAG, "No Wi‑Fi credentials found in NVS");
         return -1;
     }

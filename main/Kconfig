@@ -1,0 +1,12 @@
+menu "Application"
+
+    config APP_USE_SQLITE3
+        bool "Enable SQLite3 database storage"
+        default n
+        help
+            Build the SQLite3-backed database manager. When disabled, the
+            database manager logs a warning and returns an error for database
+            operations. Enable this only when a sqlite3 component is provided
+            via the ESP-IDF component registry or a local component.
+
+endmenu

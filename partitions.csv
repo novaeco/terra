@@ -1,0 +1,10 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# This partition table matches the layout described in the project
+# documentation (two OTA slots and a large SPIFFS partition for the
+# database and web UI).  Adjust the sizes as needed for your
+# particular application.
+nvs,      data, nvs,     0x9000,   24K,
+otadata,  data, ota,     0xd000,   8K,
+ota_0,    app,  ota_0,   0x10000,  3M,
+ota_1,    app,  ota_1,   0x310000, 3M,
+spiffs,   data, spiffs,  0x620000, 9.75M,

@@ -22,7 +22,6 @@ idf_component_register(
         "sensors/ds18b20.c"
         "sensors/adc_sensors.c"
         "mqtt/mqtt_client.c"
-        "mqtt/mqtt_topics.c"
         "ble/ble_server.c"
         "ble/ble_services.c"
         "security/auth.c"

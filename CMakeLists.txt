@@ -5,7 +5,5 @@ cmake_minimum_required(VERSION 3.5)
 # settings; here we simply declare the project and rely on the IDF
 # build system when present.
 
-set(EXTRA_COMPONENT_DIRS "components")
-
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(reptile_manager)

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include "sdkconfig.h"
 #include "db_manager.h"
 
 /*
@@ -13,14 +14,20 @@
  * same directory.  See the architecture document for the schema【808169448218282†L587-L669】.
  */
 
-#include "sqlite3.h"
 #include "storage/file_manager.h"
 #include "utils/logger.h"
 
+#if CONFIG_APP_USE_SQLITE3
+#include "sqlite3.h"
 static sqlite3 *s_db = NULL;
+#endif
 
 int db_init(void)
 {
+#if !CONFIG_APP_USE_SQLITE3
+    log_warn("db", "SQLite disabled (CONFIG_APP_USE_SQLITE3=n)");
+    return -1;
+#else
     if (s_db) {
         return 0;
     }
@@ -55,10 +62,16 @@ int db_init(void)
     }
     log_info("db", "Database initialised at %s", db_path);
     return 0;
+#endif
 }
 
 int db_execute(const char *sql)
 {
+#if !CONFIG_APP_USE_SQLITE3
+    (void)sql;
+    log_warn("db", "SQLite disabled (CONFIG_APP_USE_SQLITE3=n)");
+    return -1;
+#else
     if (!s_db || !sql) {
         return -1;
     }
@@ -70,10 +83,15 @@ int db_execute(const char *sql)
         return -1;
     }
     return 0;
+#endif
 }
 
 int db_backup(void)
 {
+#if !CONFIG_APP_USE_SQLITE3
+    log_warn("db", "SQLite disabled (CONFIG_APP_USE_SQLITE3=n)");
+    return -1;
+#else
     if (!s_db) {
         return -1;
     }
@@ -102,4 +120,5 @@ int db_backup(void)
     fclose(fdst);
     log_info("db", "Database backup created at %s", dst);
     return 0;
+#endif
 }

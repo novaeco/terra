@@ -54,7 +54,7 @@ int mqtt_client_init(void)
     }
     char broker_uri[128] = {0};
     // Read broker URI from NVS; fallback to test broker
-    if (nvs_get_str("mqtt_uri", broker_uri, sizeof(broker_uri)) != 0) {
+    if (nvsman_get_str("mqtt_uri", broker_uri, sizeof(broker_uri)) != 0) {
         strncpy(broker_uri, "mqtt://broker.hivemq.com", sizeof(broker_uri) - 1);
     }
 

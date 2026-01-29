@@ -53,7 +53,7 @@ idf_component_register(
         esp_event
         esp_http_server
         esp_netif
-        esp_spiffs
+        spiffs
         esp_timer
         esp_wifi
         nvs_flash

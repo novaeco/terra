@@ -40,7 +40,11 @@ void app_main(void)
     // Initialise database
     db_init();
     // Initialise sensors
+#if APP_SENSORS_ENABLED
     sensors_init();
+#else
+    printf("Sensors disabled via APP_SENSORS_ENABLED=0\n");
+#endif
     // Start MQTT client
     mqtt_client_init();
     // Start HTTP server
@@ -49,10 +53,12 @@ void app_main(void)
     ota_init();
 
     // Simple periodic sensor reading loop (non‑blocking tasks omitted)
+#if APP_SENSORS_ENABLED
     while (1) {
         sensors_read();
         vTaskDelay(pdMS_TO_TICKS(60000)); // 1 minute
     }
+#endif
 
     // Unreachable; in practice the FreeRTOS scheduler runs tasks
     // and the loop above yields to other tasks.

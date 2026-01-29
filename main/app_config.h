@@ -12,6 +12,12 @@
 #define APP_NAME "ESP32 Reptile Manager"
 #define APP_VERSION "0.1.0-skeleton"
 
+/*
+ * Sensor module enablement.
+ * Set to 0 to disable sensor initialization/reads when hardware is not wired.
+ */
+#define APP_SENSORS_ENABLED 0
+
 /* Wi‑Fi credentials (overridden by provisioning at runtime). */
 #define DEFAULT_WIFI_SSID     ""
 #define DEFAULT_WIFI_PASSWORD ""

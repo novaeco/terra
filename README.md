@@ -20,6 +20,40 @@ the responsibilities outlined in the architecture.  You are welcome
 to replace these stubs with real implementations based on the
 documentation in the `docs` folder.
 
+## PSRAM Troubleshooting (ESP32-S3)
+
+If the monitor shows an error similar to:
+
+```
+E (xxx) quad_psram: PSRAM chip is not connected, or wrong PSRAM line mode
+E cpu_start: Failed to init external RAM!
+```
+
+It means the firmware is configured to use external PSRAM, but the
+module either **does not have PSRAM** or the PSRAM **mode/size** does not
+match the hardware.
+
+**Option A — Board without PSRAM (quick fix):**
+
+Use the no‑PSRAM defaults when configuring the project:
+
+```bash
+idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.no_psram" reconfigure
+idf.py build
+```
+
+**Option B — Board with PSRAM (correct config):**
+
+Keep PSRAM enabled and make sure the settings match your module
+(line mode and size). Use:
+
+```bash
+idf.py menuconfig
+```
+
+Then check **Component config → ESP32S3-specific → Support for external
+SPIRAM** and set the correct mode/size for your board.
+
 ## Getting Started
 
 To build the full project you will need the Espressif ESP‑IDF toolchain.

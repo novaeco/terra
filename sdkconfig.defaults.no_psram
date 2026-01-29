@@ -1,0 +1,10 @@
+# Default SDK configuration for boards without external PSRAM.
+# Use this file when your ESP32-S3 module does not include PSRAM or when
+# you want to boot without external memory.
+# CONFIG_ESP32S3_SPIRAM_SUPPORT is not set
+# CONFIG_SPIRAM_SPEED_80M is not set
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="32MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

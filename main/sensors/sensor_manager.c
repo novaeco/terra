@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "sensor_manager.h"
+#include "app_config.h"
 #include "dht22.h"
 #include "ds18b20.h"
 #include "mqtt/mqtt_client.h"
@@ -26,6 +27,10 @@ static uint8_t s_ds_count = 0;
 
 int sensors_init(void)
 {
+#if !APP_SENSORS_ENABLED
+    log_info("sensors", "Sensors disabled (APP_SENSORS_ENABLED=0)");
+    return 0;
+#endif
     // Initialise DHT22 (pseudo‑random generator)
     dht22_init();
 
@@ -45,6 +50,9 @@ int sensors_init(void)
 
 int sensors_read(void)
 {
+#if !APP_SENSORS_ENABLED
+    return 0;
+#endif
     // Read DHT22
     float temp = 0.0f, hum = 0.0f;
     if (dht22_read(&temp, &hum) == 0) {

@@ -34,7 +34,7 @@ Créer un système de gestion d'élevage de reptiles **modulaire**, **évolutif*
 2. 🧩 **Architecture modulaire** : pas de monolithe, services découplés
 3. 📊 **Traçabilité complète** : registres, documents, historiques
 4. 🚨 **Alertes intelligentes** : obligations, renouvellements, deadlines
-5. 📱 **Multi-plateforme** : web, mobile, API
+5. 📱 **Multiplateforme** : web, mobile, API
 6. 🔒 **Sécurité & RGPD** : données sensibles protégées
 
 ### 1.4 Hors Périmètre (Phase 1)
@@ -87,7 +87,7 @@ Créer un système de gestion d'élevage de reptiles **modulaire**, **évolutif*
    - Ports : interfaces définies par le domaine
    - Adapters : implémentations techniques interchangeables
 
-3. **Event-Driven Architecture**
+3. **Architecture orientée événements**
    - Domain events pour communication inter-modules
    - Event sourcing pour traçabilité (optionnel par module)
    - Saga pattern pour transactions distribuées
@@ -2465,7 +2465,7 @@ jobs:
 - [ ] **Photos & Galerie** : upload multi-photos, reconnaissance morphs
 - [ ] **Statistiques Avancées** : graphiques, insights
 - [ ] **Mobile App** : React Native (iOS/Android)
-- [ ] **Notifications Push** : alertes temps réel
+- [ ] **Notifications Push** : alertes en temps réel
 - [ ] **Multi-utilisateurs** : collections partagées, équipes
 
 ### 10.3 Phase 3 - Climatique & IoT (4-6 mois)

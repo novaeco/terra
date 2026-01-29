@@ -1,0 +1,14 @@
+# Default SDK configuration for the ESP32 Reptile Manager skeleton.
+# In a real project you would generate this using `idf.py menuconfig`.
+# These options enable external SPIRAM and set log verbosity to
+# informational.  Refer to the official ESP‑IDF documentation for
+# further details.
+
+CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="32MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

@@ -36,9 +36,9 @@ match the hardware. The boot can continue without PSRAM if
 `CONFIG_SPIRAM_IGNORE_NOTFOUND` is enabled, but you should align the
 configuration with your hardware to avoid the warnings.
 
-This repository now enables `CONFIG_SPIRAM_IGNORE_NOTFOUND` by default so
-the firmware can boot even when PSRAM is missing, while still using PSRAM
-if it is detected.
+This repository now defaults to a **no‑PSRAM** configuration to avoid
+boot warnings on boards without external memory. Enable PSRAM explicitly
+when you are on a PSRAM‑equipped module.
 
 **Hypothèses (et vérifications rapides) :**
 
@@ -56,7 +56,7 @@ if it is detected.
 
 **Option A — Board without PSRAM (quick fix):**
 
-Use the no‑PSRAM defaults when configuring the project:
+Use the no‑PSRAM defaults when configuring the project (already the default):
 
 ```bash
 idf.py fullclean
@@ -75,10 +75,16 @@ Then confirm the generated `sdkconfig` contains the line
 
 **Option B — Board with PSRAM (correct config):**
 
-Keep PSRAM enabled and make sure the settings match your module
+Enable PSRAM and make sure the settings match your module
 (line mode and size). Use:
 
 ```bash
+REPTILE_USE_PSRAM=1 idf.py fullclean build
+
+# or using explicit defaults:
+# idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.psram" reconfigure
+
+# or configure manually
 idf.py menuconfig
 ```
 

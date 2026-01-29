@@ -20,6 +20,7 @@ idf_component_register(
         "sensors/sensor_manager.c"
         "sensors/dht22.c"
         "sensors/ds18b20.c"
+        "onewire/onewire.c"
         "sensors/adc_sensors.c"
         "mqtt/mqtt_client.c"
         "ble/ble_server.c"
@@ -41,6 +42,7 @@ idf_component_register(
         "database"
         "storage"
         "sensors"
+        "onewire"
         "mqtt"
         "ble"
         "security"
@@ -48,4 +50,11 @@ idf_component_register(
         "utils"
     REQUIRES
         cjson
+        esp_event
+        esp_http_server
+        esp_netif
+        esp_spiffs
+        esp_timer
+        esp_wifi
+        nvs_flash
 )

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "dht22.h"
+#include "esp_random.h"
 #include "esp_system.h"
 
 /*

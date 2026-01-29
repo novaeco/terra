@@ -52,9 +52,13 @@ match the hardware.
 Use the no‑PSRAM defaults when configuring the project:
 
 ```bash
+idf.py fullclean
 idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.no_psram" reconfigure
 idf.py build
 ```
+
+Then confirm the generated `sdkconfig` contains the line
+`# CONFIG_ESP32S3_SPIRAM_SUPPORT is not set` before flashing.
 
 **Option B — Board with PSRAM (correct config):**
 

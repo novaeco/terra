@@ -33,7 +33,8 @@ void app_main(void)
     nvs_init();
 
     // Initialise Wi‑Fi; if credentials are missing start AP for provisioning
-    if (wifi_init() != 0) {
+    bool wifi_connected = (wifi_init() == 0);
+    if (!wifi_connected) {
         // Start AP mode for provisioning
         wifi_start_ap();
     }
@@ -45,8 +46,12 @@ void app_main(void)
 #else
     printf("Sensors disabled via APP_SENSORS_ENABLED=0\n");
 #endif
-    // Start MQTT client
-    mqtt_client_init();
+    // Start MQTT client only when STA networking is available
+    if (wifi_connected) {
+        mqtt_client_init();
+    } else {
+        printf("MQTT client disabled until Wi-Fi STA connection is available.\n");
+    }
     // Start HTTP server
     http_server_start();
     // Initialise OTA support

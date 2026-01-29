@@ -60,7 +60,7 @@ int mqtt_client_init(void)
     }
 
     esp_mqtt_client_config_t mqtt_cfg = {
-        .uri = broker_uri,
+        .broker.address.uri = broker_uri,
     };
     s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     if (!s_mqtt_client) {

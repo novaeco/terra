@@ -57,6 +57,12 @@ idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.no_psram" re
 idf.py build
 ```
 
+Or set an environment variable to auto-append the no‑PSRAM defaults:
+
+```bash
+REPTILE_NO_PSRAM=1 idf.py fullclean build
+```
+
 Then confirm the generated `sdkconfig` contains the line
 `# CONFIG_ESP32S3_SPIRAM_SUPPORT is not set` before flashing.
 

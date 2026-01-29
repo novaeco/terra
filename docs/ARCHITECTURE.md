@@ -1,6 +1,6 @@
 # Architecture ESP32-S3 Reptile Manager Server
 
-## 📐 Vue d'Ensemble Architecture
+## 📐 Vue d'ensemble de l'architecture
 
 ### Modèle Multi-Couches
 
@@ -64,9 +64,9 @@
 
 **Responsabilités:**
 - Gestion connexion Wi-Fi (Station + AP)
-- Auto-reconnexion intelligente
-- Provisioning via AP mode
-- Monitoring RSSI et qualité réseau
+- Reconnexion automatique intelligente
+- Provisioning en mode AP
+- Suivi RSSI et qualité réseau
 - Configuration persistante (NVS)
 
 **Composants:**
@@ -106,9 +106,9 @@ DISCONNECTED → CONNECTING → CONNECTED
 ### 2. Module HTTP Server
 
 **Responsabilités:**
-- Serveur HTTP/HTTPS multi-threaded
+- Serveur HTTP/HTTPS multithread
 - API REST complète
-- WebSocket pour temps réel
+- WebSocket pour le temps réel
 - Authentification JWT
 - Rate limiting
 
@@ -344,7 +344,7 @@ rollback:
 
 ---
 
-### 4. Module Sensors (Temps Réel)
+### 4. Module Sensors (Temps réel)
 
 **Responsabilités:**
 - Lecture périodique capteurs
@@ -448,7 +448,7 @@ esp_err_t ds18b20_read_temp(uint8_t *address, float *temp) {
     onewire_read_bytes(scratchpad, 9);
     
     // 3. Vérifier CRC
-    if (!onewire_crc8(scratchpad, 8) == scratchpad[8]) {
+    if (onewire_crc8(scratchpad, 8) != scratchpad[8]) {
         return ESP_ERR_INVALID_CRC;
     }
     
@@ -846,19 +846,9 @@ httpd_resp_set_hdr(req, "Transfer-Encoding", "chunked");
 
 ### 3. Sensor Read Optimizations
 
-```c
-// Batch I2C reads
-i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-i2c_master_start(cmd);
-i2c_master_write_byte(cmd, (DHT22_ADDR << 1) | I2C_MASTER_WRITE, true);
-i2c_master_write_byte(cmd, DHT22_REG_TEMP, true);
-i2c_master_start(cmd);  // Repeated start
-i2c_master_write_byte(cmd, (DHT22_ADDR << 1) | I2C_MASTER_READ, true);
-i2c_master_read(cmd, data, 4, I2C_MASTER_LAST_NACK);
-i2c_master_stop(cmd);
-i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(1000));
-i2c_cmd_link_delete(cmd);
-```
+- Regrouper les lectures I2C en mode « burst » quand le capteur le permet.
+- Limiter les réveils CPU en alignant les lectures sur un cadenceur commun.
+- Utiliser des buffers DMA pour les transferts I2C/SPI afin d'économiser du temps CPU.
 
 ---
 

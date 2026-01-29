@@ -10,17 +10,17 @@ Ce document présente le **projet complet** pour transformer votre **ESP32-S3-De
 
 ### ✅ Serveur Embarqué Complet
 - **Base de données SQLite** optimisée pour ESP32 avec cache PSRAM
-- **API REST complète** conforme à la spec du gestionnaire
-- **WebSocket** pour données temps réel
+- **API REST complète** conforme à la spécification du gestionnaire
+- **WebSocket** pour les données en temps réel
 - **Wi-Fi** avec provisioning automatique
 - **MQTT** pour IoT et intégration
 - **BLE** pour communication locale
-- **OTA** updates sécurisées
+- **OTA** : mises à jour sécurisées
 
-### ✅ Architecture Modulaire (NON-Monolithique)
+### ✅ Architecture Modulaire (non monolithique)
 - **Services découplés** : Wi-Fi, HTTP, DB, Sensors, MQTT, BLE
-- **Communication par events** (FreeRTOS queues, event groups)
-- **Multi-core** : Core 0 pour réseau/DB, Core 1 pour temps réel
+- **Communication par événements** (FreeRTOS queues, event groups)
+- **Multi-core** : Core 0 pour réseau/DB, Core 1 pour le temps réel
 - **Évolutivité** : Ajout facile de nouveaux modules
 
 ### ✅ Conformité Réglementaire Embarquée
@@ -33,7 +33,7 @@ Ce document présente le **projet complet** pour transformer votre **ESP32-S3-De
 - Support **DHT22**, **DS18B20**, **BME280**, **ADC**
 - Historique **7 jours** en PSRAM
 - Publication **MQTT** périodique
-- Streaming **WebSocket** temps réel
+- Streaming **WebSocket** en temps réel
 
 ### ✅ Sécurité
 - **JWT** authentification
@@ -49,7 +49,7 @@ Ce document présente le **projet complet** pour transformer votre **ESP32-S3-De
 esp32-reptile-server/
 │
 ├── 📄 README.md                         # Documentation principale
-├── 📄 CMakeLists.txt                    # Build système root
+├── 📄 CMakeLists.txt                    # Système de build racine
 ├── 📄 partitions.csv                    # Table partitions 32MB
 ├── 📄 sdkconfig.defaults                # Configuration ESP-IDF
 │
@@ -174,7 +174,7 @@ cd ~/esp/esp-idf
 # Activation environnement
 source ~/esp/esp-idf/export.sh
 
-# Ajouter à ~/.bashrc pour permanence
+# Ajouter à ~/.bashrc pour persistance
 echo 'alias get_idf=". $HOME/esp/esp-idf/export.sh"' >> ~/.bashrc
 ```
 
@@ -279,7 +279,7 @@ POST   /api/v1/breeding/cycles/{id}/clutch   # Enregistrer ponte
 POST   /api/v1/breeding/cycles/{id}/hatching # Enregistrer éclosion
 ```
 
-### Capteurs (Temps Réel)
+### Capteurs (Temps réel)
 ```http
 GET    /api/v1/sensors/current               # Valeurs actuelles
 GET    /api/v1/sensors/history?hours=24      # Historique 24h
@@ -336,7 +336,7 @@ L'ESP32 sert une interface web complète depuis SPIFFS :
 ```
 http://<ESP32_IP>/
 ├── 📊 Dashboard
-│   ├── Statistiques temps réel
+│   ├── Statistiques en temps réel
 │   ├── Graphiques capteurs
 │   └── Alertes actives
 │
@@ -407,11 +407,11 @@ http://<ESP32_IP>/
 
 | Métrique | Valeur |
 |----------|--------|
-| Temps boot | ~2-3 secondes |
+| Temps de démarrage | ~2-3 secondes |
 | Connexion Wi-Fi | ~3-5 secondes |
 | Latence API (GET) | 5-15 ms |
 | Latence API (POST) | 10-30 ms |
-| Requêtes/sec | 200-300 (WiFi) |
+| Requêtes/sec | 200-300 (Wi-Fi) |
 | Lecture capteurs | 1 mesure/minute |
 | Buffer historique | 7 jours (10,080 mesures) |
 | Consommation RAM | 200-300 KB (DRAM) |
@@ -474,7 +474,7 @@ mosquitto_pub -t "reptile/ota/firmware" \
 ```
 
 ### Rollback Automatique
-Si le nouveau firmware crash au démarrage, l'ESP32 rollback automatiquement vers la version précédente après 2 minutes.
+Si le nouveau firmware plante au démarrage, l'ESP32 effectue un rollback automatique vers la version précédente après 2 minutes.
 
 ---
 
@@ -682,7 +682,7 @@ SOFTWARE.
 **Date** : 2025-01-28  
 **Hardware** : ESP32-S3-DevKitC-1-N32R16V  
 **Framework** : ESP-IDF v6.1  
-**Status** : ✅ Production Ready
+**Status** : ✅ Prêt pour production
 
 ---
 

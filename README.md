@@ -27,11 +27,14 @@ If the monitor shows an error similar to:
 ```
 E (xxx) quad_psram: PSRAM chip is not connected, or wrong PSRAM line mode
 E cpu_start: Failed to init external RAM!
+E (xxx) esp_psram: PSRAM enabled but initialization failed. Bailing out.
 ```
 
 It means the firmware is configured to use external PSRAM, but the
 module either **does not have PSRAM** or the PSRAM **mode/size** does not
-match the hardware.
+match the hardware. The boot can continue without PSRAM if
+`CONFIG_SPIRAM_IGNORE_NOTFOUND` is enabled, but you should align the
+configuration with your hardware to avoid the warnings.
 
 This repository now enables `CONFIG_SPIRAM_IGNORE_NOTFOUND` by default so
 the firmware can boot even when PSRAM is missing, while still using PSRAM

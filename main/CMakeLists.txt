@@ -49,7 +49,7 @@ idf_component_register(
         "ota"
         "utils"
     REQUIRES
-        json
+        cjson
         esp_event
         esp_http_server
         esp_netif

@@ -33,6 +33,10 @@ It means the firmware is configured to use external PSRAM, but the
 module either **does not have PSRAM** or the PSRAM **mode/size** does not
 match the hardware.
 
+This repository now enables `CONFIG_SPIRAM_IGNORE_NOTFOUND` by default so
+the firmware can boot even when PSRAM is missing, while still using PSRAM
+if it is detected.
+
 **Hypothèses (et vérifications rapides) :**
 
 * **A — Module sans PSRAM :** la carte ne dispose pas de PSRAM.

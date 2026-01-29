@@ -33,6 +33,20 @@ It means the firmware is configured to use external PSRAM, but the
 module either **does not have PSRAM** or the PSRAM **mode/size** does not
 match the hardware.
 
+**Hypothèses (et vérifications rapides) :**
+
+* **A — Module sans PSRAM :** la carte ne dispose pas de PSRAM.
+  * Vérif : consultez la référence exacte du module (marquage, BOM) et
+    comparez avec les variantes PSRAM/non‑PSRAM.
+* **B — Mauvais mode de ligne PSRAM :** le firmware est en mode quad alors
+  que le module exige un autre mode.
+  * Vérif : dans `idf.py menuconfig`, vérifiez la configuration
+    *Component config → ESP32S3‑specific → SPI RAM config* et ajustez le
+    mode/ligne selon la documentation matérielle.
+* **C — Mauvaise taille/config PSRAM :** taille ou timings incorrects.
+  * Vérif : idem menuconfig, vérifiez la taille configurée et les timings
+    recommandés pour votre module.
+
 **Option A — Board without PSRAM (quick fix):**
 
 Use the no‑PSRAM defaults when configuring the project:

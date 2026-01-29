@@ -47,5 +47,5 @@ idf_component_register(
         "ota"
         "utils"
     REQUIRES
-        json
+        cjson
 )

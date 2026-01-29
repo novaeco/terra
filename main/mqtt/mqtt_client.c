@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-#include "mqtt_client.h"
+#include "mqtt/mqtt_client.h"
 
 /*
  * MQTT client implementation.
@@ -13,7 +13,9 @@
  * example for more details.
  */
 
+#include "esp_err.h"
 #include "esp_log.h"
+#include "esp_event.h"
 #include "mqtt_client.h"
 #include "storage/nvs_manager.h"
 

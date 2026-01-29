@@ -54,7 +54,7 @@ esp_err_t ds18b20_read_temp(uint8_t *address, float *temp)
     onewire_read_bytes(scratchpad, 9);
 
     // 3. Vérifier CRC
-    if (!onewire_crc8(scratchpad, 8) == scratchpad[8]) {
+    if (onewire_crc8(scratchpad, 8) != scratchpad[8]) {
         return ESP_ERR_INVALID_CRC;
     }
 

@@ -43,7 +43,6 @@ idf_component_register(
         "storage"
         "sensors"
         "onewire"
-        "mqtt"
         "ble"
         "security"
         "ota"
@@ -52,9 +51,14 @@ idf_component_register(
         cjson
         esp_event
         esp_http_server
+        esp_http_client
+        esp_https_ota
         esp_netif
+        esp_adc
         spiffs
         esp_timer
         esp_wifi
         nvs_flash
+        mqtt
+        mbedtls
 )

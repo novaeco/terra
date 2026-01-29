@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "adc_sensors.h"
-#include "driver/adc.h"
-#include "esp_system.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_err.h"
 
 /*
  * ADC sensors implementation.
@@ -12,11 +12,16 @@
  * the ESP‑IDF ADC calibration example for full calibration.
  */
 
+static adc_oneshot_unit_handle_t s_adc_handle;
+
 int adc_init(void)
 {
-    // Configure width to 12 bits for all channels
-    adc1_config_width(ADC_WIDTH_BIT_12);
-    return 0;
+    adc_oneshot_unit_init_cfg_t init_config = {
+        .unit_id = ADC_UNIT_1,
+        .ulp_mode = ADC_ULP_MODE_DISABLE
+    };
+    esp_err_t err = adc_oneshot_new_unit(&init_config, &s_adc_handle);
+    return (err == ESP_OK) ? 0 : -1;
 }
 
 int adc_read_raw(int channel, int *value)
@@ -24,14 +29,20 @@ int adc_read_raw(int channel, int *value)
     if (!value) {
         return -1;
     }
-    // Configure attenuation for the specific channel (11 dB for 0-3.3V)
-    adc1_channel_t ch = (adc1_channel_t)channel;
-    adc1_config_channel_atten(ch, ADC_ATTEN_DB_11);
-    int raw = adc1_get_raw(ch);
-    if (raw < 0) {
+    if (!s_adc_handle) {
         return -1;
     }
-    *value = raw;
+    adc_channel_t ch = (adc_channel_t)channel;
+    adc_oneshot_chan_cfg_t chan_cfg = {
+        .atten = ADC_ATTEN_DB_11,
+        .bitwidth = ADC_BITWIDTH_12
+    };
+    if (adc_oneshot_config_channel(s_adc_handle, ch, &chan_cfg) != ESP_OK) {
+        return -1;
+    }
+    if (adc_oneshot_read(s_adc_handle, ch, value) != ESP_OK) {
+        return -1;
+    }
     return 0;
 }
 

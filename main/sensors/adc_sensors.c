@@ -34,7 +34,7 @@ int adc_read_raw(int channel, int *value)
     }
     adc_channel_t ch = (adc_channel_t)channel;
     adc_oneshot_chan_cfg_t chan_cfg = {
-        .atten = ADC_ATTEN_DB_11,
+        .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_12
     };
     if (adc_oneshot_config_channel(s_adc_handle, ch, &chan_cfg) != ESP_OK) {

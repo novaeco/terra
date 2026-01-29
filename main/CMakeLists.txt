@@ -61,4 +61,6 @@ idf_component_register(
         nvs_flash
         mqtt
         mbedtls
+    PRIV_REQUIRES
+        app_update
 )

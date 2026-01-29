@@ -31,13 +31,16 @@ int ota_update_from_url(const char *url)
     if (!url) {
         return -1;
     }
-    esp_http_client_config_t config = {
+    esp_http_client_config_t http_config = {
         .url = url,
         .cert_pem = server_cert_pem_start,
         .timeout_ms = 30000
     };
+    esp_https_ota_config_t ota_config = {
+        .http_config = &http_config
+    };
     ESP_LOGI(TAG_OTA, "Starting OTA from %s", url);
-    esp_err_t ret = esp_https_ota(&config);
+    esp_err_t ret = esp_https_ota(&ota_config);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG_OTA, "OTA update succeeded, rebooting...");
         esp_restart();

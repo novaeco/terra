@@ -1,6 +1,8 @@
 #ifndef CRYPTO_H
 #define CRYPTO_H
 
+#include <stddef.h>
+
 /*
  * Cryptography helpers.  In a production build this module would
  * wrap mbedTLS or another crypto library to perform hashing,

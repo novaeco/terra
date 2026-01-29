@@ -10,7 +10,7 @@
  * random hex and y is one of 8, 9, A or B.  Returns 0 on success.
  */
 
-#include "esp_system.h"
+#include "esp_random.h"
 
 int uuid_generate(char *out, size_t max_len)
 {

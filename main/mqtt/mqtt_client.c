@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-#include "mqtt/mqtt_client.h"
+#include <mqtt_client.h>
 
 /*
  * MQTT client implementation.
@@ -16,7 +16,6 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_event.h"
-#include "mqtt_client.h"
 #include "storage/nvs_manager.h"
 
 static const char *TAG_MQTT = "mqtt";
